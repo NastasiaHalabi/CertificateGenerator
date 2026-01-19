@@ -28,6 +28,17 @@ function buildEmailStatusCsv(
   return lines.join("\n");
 }
 
+function parseEmails(value: string): string[] {
+  return value
+    .split(/[;,]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
 const router = Router();
 
 router.post("/generate", async (req, res) => {
@@ -96,7 +107,25 @@ router.post("/generate", async (req, res) => {
       }
 
       if (shouldSendEmail) {
-        const to = row.__email || row[options.emailColumn || ""] || "";
+        const rawTo = row.__email || row[options.emailColumn || ""] || "";
+        const recipients = parseEmails(rawTo);
+        if (recipients.length === 0) {
+          emailStatuses.push({ row: index + 1, email: "", status: "skipped", error: "Missing email" });
+          continue;
+        }
+
+        const invalidEmails = recipients.filter((email) => !isValidEmail(email));
+        if (invalidEmails.length > 0) {
+          emailStatuses.push({
+            row: index + 1,
+            email: recipients.join(", "),
+            status: "failed",
+            error: `Invalid email(s): ${invalidEmails.join(", ")}`,
+          });
+          continue;
+        }
+
+        const to = recipients.join(", ");
         if (to) {
           try {
             await sendCertificateEmail({
@@ -116,8 +145,6 @@ router.post("/generate", async (req, res) => {
               error: err instanceof Error ? err.message : "Unknown error",
             });
           }
-        } else {
-          emailStatuses.push({ row: index + 1, email: "", status: "skipped", error: "Missing email" });
         }
       }
     }
