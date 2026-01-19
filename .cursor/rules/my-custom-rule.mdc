@@ -1,0 +1,485 @@
+---
+name: Certificate Generator Project Rules
+description: This is a new rule
+---
+
+markdown
+# Certificate Generator Project Rules
+
+## Project Overview
+This is a certificate generator application that allows users to:
+1. Upload certificate templates (JPG/PNG)
+2. Add and position text variables via drag-and-drop on the template
+3. Customize text styling (font, size, bold, italic, color, rotation)
+4. Import data from Excel files
+5. Generate individual PDF certificates for each row
+6. Merge all PDFs into a single combined file
+
+## Technology Stack
+- **Frontend**: React 18+ with TypeScript
+- **Styling**: Tailwind CSS
+- **Canvas**: Fabric.js for template manipulation and text positioning
+- **File Handling**: 
+  - XLSX (SheetJS) for Excel reading
+  - jsPDF for PDF generation
+  - pdf-lib for merging PDFs
+- **Drag & Drop**: react-draggable or Fabric.js built-in controls
+
+## Architecture Principles
+
+### Component Structure
+```
+src/
+├── components/
+│   ├── TemplateUploader.tsx    # Upload JPG/PNG templates
+│   ├── CertificateCanvas.tsx   # Fabric.js canvas with template
+│   ├── VariablesPanel.tsx      # List of draggable variables
+│   ├── VariableEditor.tsx      # Font, size, rotation controls
+│   ├── ExcelImporter.tsx       # Upload and preview Excel
+│   ├── VariableMapper.tsx      # Map variables to Excel columns
+│   └── PDFGenerator.tsx        # Generate and download PDFs
+├── hooks/
+│   ├── useCanvas.ts            # Fabric.js canvas management
+│   ├── useExcelReader.ts       # Excel file parsing
+│   └── usePDFGenerator.ts      # PDF creation logic
+├── types/
+│   ├── template.types.ts
+│   ├── variable.types.ts
+│   └── excel.types.ts
+└── utils/
+    ├── excelParser.ts
+    ├── pdfGenerator.ts
+    └── pdfMerger.ts
+```
+
+### Data Models
+
+#### TextVariable
+```typescript
+interface TextVariable {
+  id: string;              // Unique identifier
+  name: string;            // Variable name (e.g., "name", "date")
+  x: number;               // Position X on canvas
+  y: number;               // Position Y on canvas
+  text: string;            // Preview/sample text
+  fontSize: number;        // Font size in px
+  fontFamily: string;      // Font family name
+  fontWeight: 'normal' | 'bold';
+  fontStyle: 'normal' | 'italic';
+  color: string;           // Hex color code
+  rotation: number;        // Rotation in degrees
+  textAlign: 'left' | 'center' | 'right';
+}
+```
+
+#### CertificateTemplate
+```typescript
+interface CertificateTemplate {
+  id: string;
+  file: File;              // JPG or PNG file
+  imageUrl: string;        // Object URL or base64
+  width: number;           // Template width in pixels
+  height: number;          // Template height in pixels
+}
+```
+
+#### ExcelData
+```typescript
+interface ExcelData {
+  headers: string[];                    // Column names from first row
+  rows: Record[];         // Data rows as objects
+  rowCount: number;                    // Total number of rows
+}
+```
+
+## Core Functionality Requirements
+
+### 1. Template Upload
+- Accept only JPG and PNG formats
+- Maximum file size: 10MB
+- Display preview of uploaded template
+- Store template dimensions automatically
+- Allow template replacement
+- Show error if invalid format
+
+### 2. Variable Management
+- Drag variables from panel onto canvas
+- Position variables anywhere on template
+- Visual handles for moving and rotating
+- Live preview of variable placement
+- Click to select and edit variable
+- Delete selected variable with keyboard (Delete/Backspace)
+- Duplicate variable functionality
+
+### 3. Variable Styling Editor
+When a variable is selected, show editor panel with:
+- **Font Family**: Dropdown with common fonts (Arial, Times New Roman, Helvetica, Georgia, Courier)
+- **Font Size**: Number input (range: 8-200px) with slider
+- **Font Weight**: Checkbox for bold
+- **Font Style**: Checkbox for italic
+- **Text Color**: Color picker
+- **Rotation**: Slider (-180° to 180°) with number input
+- **Text Align**: Buttons for left/center/right
+- **Sample Text**: Editable text field for preview
+- All changes must update canvas in real-time
+
+### 4. Excel Import
+- Accept .xlsx, .xls, .csv files
+- Parse file and extract headers from first row
+- Display preview table showing first 5 rows
+- Show total row count
+- Handle empty cells gracefully
+- Validate that file has data
+
+### 5. Variable Mapping
+- Automatically map variables to Excel columns by matching names
+- If variable name = "name" and Excel has column "name", auto-map
+- Show mapping interface: Variable "name" → Excel Column "Name"
+- Allow manual column selection if auto-match fails
+- Highlight unmapped variables as warnings
+- Prevent generation if any variable unmapped
+- Case-insensitive matching
+
+### 6. PDF Generation
+- Generate one PDF per Excel row
+- Replace each variable with corresponding Excel cell value
+- Maintain all text styling (font, size, color, rotation)
+- Show progress bar during generation: "Generating 15/100..."
+- Provide options:
+  - Download individual PDFs (as ZIP)
+  - Download merged PDF (all in one file)
+  - Download both
+- Filename pattern: `{basename}_certificate_{rowNumber}.pdf`
+- Handle special characters in data
+- If data missing for variable, use sample text as fallback
+
+### 7. PDF Merging
+- Combine all individual PDFs into single file
+- Maintain page order matching Excel row order
+- Use pdf-lib for merging
+- Show progress during merge
+- Filename: `{basename}_all_certificates.pdf`
+
+## Code Style Guidelines
+
+### TypeScript
+- Use strict mode
+- Define interfaces for all data structures
+- Use type inference where possible
+- Avoid `any` type - use `unknown` if needed
+- Export types from separate `.types.ts` files
+
+### React
+- Use functional components only
+- Use hooks (useState, useEffect, useCallback, useMemo)
+- Keep components small and focused (< 200 lines)
+- Extract reusable logic into custom hooks
+- Props should be typed interfaces
+- Use React.FC sparingly, prefer explicit return types
+
+### State Management
+- Use React Context for global state (template, variables, Excel data)
+- Local state for UI interactions
+- No Redux/Zustand needed for this project
+
+### Error Handling
+- Wrap file operations in try-catch
+- Show user-friendly error messages in UI
+- Log errors to console for debugging
+- Provide retry options for failed operations
+- Validate inputs before processing
+
+### Performance
+- Debounce text input changes (300ms)
+- Use requestAnimationFrame for canvas updates
+- Memoize expensive calculations
+- Clean up object URLs and blob URLs after use
+- Generate PDFs in batches of 50 to avoid memory issues
+
+## Fabric.js Specific Rules
+
+### Canvas Initialization
+```typescript
+import { fabric } from 'fabric';
+
+// Create canvas
+const canvas = new fabric.Canvas('canvas-id', {
+  width: template.width,
+  height: template.height,
+  selection: true
+});
+
+// Set template as background
+canvas.setBackgroundImage(
+  template.imageUrl,
+  canvas.renderAll.bind(canvas)
+);
+```
+
+### Adding Text Variables
+```typescript
+// Create text object
+const textObj = new fabric.IText(variable.text, {
+  left: variable.x,
+  top: variable.y,
+  fontSize: variable.fontSize,
+  fontFamily: variable.fontFamily,
+  fontWeight: variable.fontWeight,
+  fontStyle: variable.fontStyle,
+  fill: variable.color,
+  angle: variable.rotation,
+  textAlign: variable.textAlign,
+  // Enable controls
+  hasControls: true,
+  hasBorders: true,
+  cornerSize: 8,
+  transparentCorners: false
+});
+
+// Add to canvas
+canvas.add(textObj);
+
+// Listen for modifications
+textObj.on('modified', () => {
+  updateVariablePosition(textObj);
+});
+```
+
+### Syncing Canvas with State
+- When user moves/edits text on canvas → update variable state
+- When user changes properties in editor → update canvas object
+- Keep canvas and React state in sync at all times
+
+## Excel Reading Pattern
+```typescript
+import * as XLSX from 'xlsx';
+
+async function parseExcelFile(file: File): Promise {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target!.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+          header: 1,
+          defval: '' 
+        });
+        
+        const headers = jsonData[0] as string[];
+        const rows = jsonData.slice(1).map(row => {
+          const obj: Record = {};
+          headers.forEach((header, idx) => {
+            obj[header] = row[idx] || '';
+          });
+          return obj;
+        });
+        
+        resolve({ headers, rows, rowCount: rows.length });
+      } catch (error) {
+        reject(error);
+      }
+    };
+    
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
+  });
+}
+```
+
+## PDF Generation Pattern
+```typescript
+import jsPDF from 'jspdf';
+
+async function generatePDF(
+  canvas: fabric.Canvas,
+  variables: TextVariable[],
+  rowData: Record,
+  template: CertificateTemplate
+): Promise {
+  // Create temporary canvas with data
+  const tempCanvas = new fabric.Canvas(null, {
+    width: template.width,
+    height: template.height
+  });
+  
+  // Set background
+  tempCanvas.setBackgroundImage(template.imageUrl, () => {});
+  
+  // Add text with actual data
+  variables.forEach(variable => {
+    const value = rowData[variable.name] || variable.text;
+    const text = new fabric.IText(value, {
+      left: variable.x,
+      top: variable.y,
+      fontSize: variable.fontSize,
+      fontFamily: variable.fontFamily,
+      fontWeight: variable.fontWeight,
+      fontStyle: variable.fontStyle,
+      fill: variable.color,
+      angle: variable.rotation
+    });
+    tempCanvas.add(text);
+  });
+  
+  tempCanvas.renderAll();
+  
+  // Convert to PDF
+  const imgData = tempCanvas.toDataURL('image/png', 1.0);
+  const pdf = new jsPDF({
+    orientation: template.width > template.height ? 'landscape' : 'portrait',
+    unit: 'px',
+    format: [template.width, template.height]
+  });
+  
+  pdf.addImage(imgData, 'PNG', 0, 0, template.width, template.height);
+  
+  return pdf.output('blob');
+}
+```
+
+## Validation Rules
+
+### Before Generation
+- ✓ Template must be uploaded
+- ✓ At least one variable must be placed
+- ✓ Excel file must be imported
+- ✓ All variables must be mapped to Excel columns
+- ✓ Excel must have at least one data row
+- Show clear error messages if any validation fails
+
+### File Validation
+- Template: JPG or PNG only, max 10MB
+- Excel: .xlsx, .xls, .csv only, max 5MB
+- Variable names: alphanumeric only (a-z, 0-9, underscore)
+
+## User Experience Guidelines
+
+### Step-by-Step Flow
+1. **Upload Template** → Show preview, enable next step
+2. **Add Variables** → Drag onto template, position and style
+3. **Import Excel** → Upload file, show preview table
+4. **Map Variables** → Auto-map or manual selection
+5. **Generate** → Choose output options, show progress, download
+
+### Loading States
+- Show spinner during file upload
+- Show progress bar during PDF generation: "Generating 50/100 (50%)"
+- Disable buttons during processing
+- Show "Processing..." text
+
+### Error Messages
+- "Please upload a template first"
+- "Variable '{name}' is not mapped to any Excel column"
+- "No data found in Excel file"
+- "Failed to generate PDF. Please try again."
+
+### Success Messages
+- "Template uploaded successfully"
+- "100 certificates generated successfully"
+- "PDFs downloaded successfully"
+
+## Testing Requirements
+
+### Manual Testing Checklist
+- [ ] Upload JPG template
+- [ ] Upload PNG template
+- [ ] Reject invalid file formats
+- [ ] Add variable to canvas
+- [ ] Move variable with mouse
+- [ ] Rotate variable
+- [ ] Change font size
+- [ ] Change font family
+- [ ] Make text bold/italic
+- [ ] Change text color
+- [ ] Upload Excel file
+- [ ] Verify auto-mapping works
+- [ ] Manually map variables
+- [ ] Generate single PDF
+- [ ] Generate multiple PDFs
+- [ ] Merge PDFs
+- [ ] Download ZIP of PDFs
+
+## Dependencies to Install
+```json
+{
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "fabric": "^5.3.0",
+    "xlsx": "^0.18.5",
+    "jspdf": "^2.5.1",
+    "pdf-lib": "^1.17.1",
+    "react-draggable": "^4.4.5"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@types/fabric": "^5.3.0",
+    "typescript": "^5.0.0",
+    "vite": "^4.3.0",
+    "tailwindcss": "^3.3.0"
+  }
+}
+```
+
+## File Upload Implementation
+
+### Accept Only Specific Formats
+```tsx
+<input
+  type="file"
+  accept=".jpg,.jpeg,.png"  // For template
+  accept=".xlsx,.xls,.csv"  // For Excel
+  onChange={handleFileUpload}
+/>
+```
+
+### File Size Validation
+```typescript
+const MAX_TEMPLATE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_EXCEL_SIZE = 5 * 1024 * 1024;     // 5MB
+
+if (file.size > MAX_TEMPLATE_SIZE) {
+  showError('File too large. Maximum size is 10MB');
+  return;
+}
+```
+
+## Naming Conventions
+
+- Components: PascalCase (`TemplateUploader.tsx`)
+- Hooks: camelCase with 'use' prefix (`useCanvas.ts`)
+- Utilities: camelCase (`excelParser.ts`)
+- Types/Interfaces: PascalCase (`TextVariable`, `ExcelData`)
+- CSS classes: kebab-case with Tailwind utilities
+
+## Git Commit Message Format
+- feat: Add variable rotation feature
+- fix: Fix PDF generation for special characters
+- style: Update canvas controls styling
+- refactor: Extract PDF logic into hook
+- docs: Update README with usage instructions
+
+## Browser Compatibility
+- Target: Chrome 90+, Firefox 88+, Safari 14+, Edge 90+
+- Use modern ES6+ features
+- No IE11 support needed
+- Test canvas rendering on all browsers
+
+## Performance Targets
+- Template upload: < 2 seconds
+- Variable placement: Real-time (< 16ms per frame)
+- Excel parsing: < 3 seconds for 1000 rows
+- PDF generation: < 5 seconds per certificate
+- UI should remain responsive during generation
+
+## Security Considerations
+- All file processing happens client-side (no server upload)
+- Validate file types before processing
+- Sanitize Excel data to prevent XSS
+- Don't expose sensitive data in console logs
+- Clean up blob URLs to prevent memory leaks
+________________________________________
