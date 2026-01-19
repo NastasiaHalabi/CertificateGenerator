@@ -125,7 +125,6 @@ function App() {
               <p className="text-sm text-slate-500">Build certificates with drag-and-drop variables.</p>
             </div>
           </div>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">MVP</span>
         </div>
       </header>
 
