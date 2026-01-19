@@ -17,7 +17,7 @@ interface CertificateContextValue {
   removeVariable: (id: string) => void;
   setSelectedVariableId: (id: string | null) => void;
   setExcelData: (data: ExcelData | null) => void;
-  setMappings: (mappings: VariableMapping[]) => void;
+  setMappings: (mappings: VariableMapping[] | ((prev: VariableMapping[]) => VariableMapping[])) => void;
 }
 
 const CertificateContext = createContext<CertificateContextValue | undefined>(undefined);
@@ -27,7 +27,7 @@ export function CertificateProvider({ children }: { children: React.ReactNode })
   const [variables, setVariables] = useState<TextVariable[]>([]);
   const [selectedVariableId, setSelectedVariableId] = useState<string | null>(null);
   const [excelData, setExcelData] = useState<ExcelData | null>(null);
-  const [mappings, setMappings] = useState<VariableMapping[]>([]);
+  const [mappings, setMappingsState] = useState<VariableMapping[]>([]);
 
   const updateVariable = useCallback((id: string, updates: Partial<TextVariable>) => {
     setVariables((prev) =>
@@ -67,9 +67,18 @@ export function CertificateProvider({ children }: { children: React.ReactNode })
       removeVariable,
       setSelectedVariableId,
       setExcelData,
-      setMappings,
+      setMappings: setMappingsState,
     }),
-    [template, variables, selectedVariableId, excelData, mappings, updateVariable, addVariable, removeVariable],
+    [
+      template,
+      variables,
+      selectedVariableId,
+      excelData,
+      mappings,
+      updateVariable,
+      addVariable,
+      removeVariable,
+    ],
   );
 
   return <CertificateContext.Provider value={value}>{children}</CertificateContext.Provider>;

@@ -12,6 +12,7 @@ import { PDFGenerator } from "./components/PDFGenerator";
 import { useCertificateContext } from "./context/CertificateContext";
 import { createTextVariable } from "./utils/variableFactory";
 import { applyMappings, buildAutoMappings } from "./utils/mapping";
+import type { VariableMapping } from "./types/mapping.types";
 
 const VARIABLE_NAME_REGEX = /^[a-z0-9_]+$/i;
 
@@ -71,10 +72,13 @@ function App() {
       setMappings([]);
       return;
     }
-    setMappings((prev) => {
+    setMappings((prev: VariableMapping[]) => {
       if (prev.length === variables.length) return prev;
       const auto = buildAutoMappings(variables, excelData);
-      return auto.map((entry) => prev.find((item) => item.variableName === entry.variableName) || entry);
+      return auto.map(
+        (entry) =>
+          prev.find((item: VariableMapping) => item.variableName === entry.variableName) || entry,
+      );
     });
   }, [excelData, variables, setMappings]);
 
@@ -107,9 +111,6 @@ function App() {
     setZoom(Math.min(2, Math.max(0.5, Number(value.toFixed(2)))));
   };
 
-  const handleScrollToGenerate = () => {
-    generatorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
 
   return (
     <div className="min-h-screen bg-slate-100 pb-16">
