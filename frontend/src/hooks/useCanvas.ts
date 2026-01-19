@@ -19,6 +19,17 @@ function resolveOriginX(textAlign: TextVariable["textAlign"]) {
   return "left";
 }
 
+function getObjectId(object: FabricObject): string | undefined {
+  return (object as FabricObject & { data?: { id?: string } }).data?.id;
+}
+
+function normalizeAlign(
+  align?: IText["textAlign"],
+): TextVariable["textAlign"] {
+  if (align === "center" || align === "right") return align;
+  return "left";
+}
+
 /**
  * Sync Fabric canvas objects with React state.
  */
@@ -38,7 +49,7 @@ export function useCanvas({
   const syncVariableFromObject = useCallback(
     (object: FabricObject) => {
       if (isApplyingPreviewRef.current) return;
-      const id = object.data?.id as string | undefined;
+      const id = getObjectId(object);
       if (!id) return;
       const textObject = object as IText;
       const scaleX = textObject.scaleX ?? 1;
@@ -60,7 +71,7 @@ export function useCanvas({
         rotation: textObject.angle || 0,
         text: textObject.text || "",
         fontSize: textObject.fontSize || 0,
-        textAlign: textObject.textAlign || "left",
+        textAlign: normalizeAlign(textObject.textAlign),
         letterSpacing: (textObject.charSpacing || 0) / 1000,
         lineHeight: textObject.lineHeight || 0,
       });
@@ -94,11 +105,11 @@ export function useCanvas({
 
       canvas.on("selection:created", (event) => {
         const selected = event.selected?.[0];
-        onSelect((selected?.data?.id as string | undefined) || null);
+        onSelect(getObjectId(selected as FabricObject) || null);
       });
       canvas.on("selection:updated", (event) => {
         const selected = event.selected?.[0];
-        onSelect((selected?.data?.id as string | undefined) || null);
+        onSelect(getObjectId(selected as FabricObject) || null);
       });
       canvas.on("selection:cleared", () => onSelect(null));
     }
@@ -126,7 +137,7 @@ export function useCanvas({
     const ids = new Set(variables.map((variable) => variable.id));
 
     existingObjects.forEach((object) => {
-      const id = object.data?.id as string | undefined;
+      const id = getObjectId(object);
       if (id && !ids.has(id)) {
         canvas.remove(object);
       }
@@ -138,7 +149,7 @@ export function useCanvas({
       const textToRender = previewText ?? variable.text;
       let textObject = canvas
         .getObjects()
-        .find((object) => object.data?.id === variable.id) as IText | undefined;
+        .find((object) => getObjectId(object) === variable.id) as IText | undefined;
 
       if (!textObject) {
         textObject = new IText(textToRender, {
@@ -166,7 +177,7 @@ export function useCanvas({
           lockScalingY: variable.locked,
           lockRotation: variable.locked,
         });
-        textObject.data = { id: variable.id };
+        (textObject as FabricObject & { data?: { id?: string } }).data = { id: variable.id };
         attachObjectListeners(textObject);
         canvas.add(textObject);
       } else {
@@ -203,7 +214,7 @@ export function useCanvas({
     if (selectedVariableId) {
       const activeObject = canvas
         .getObjects()
-        .find((object) => object.data?.id === selectedVariableId);
+        .find((object) => getObjectId(object) === selectedVariableId);
       if (activeObject) {
         canvas.setActiveObject(activeObject);
       }

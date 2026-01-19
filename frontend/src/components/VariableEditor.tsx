@@ -158,7 +158,9 @@ export function VariableEditor({ variable, onChange }: VariableEditorProps) {
             <label className="text-xs font-medium text-slate-500">Font Weight</label>
             <select
               value={normalizedWeight}
-              onChange={(event) => onChange({ fontWeight: event.target.value })}
+              onChange={(event) =>
+                onChange({ fontWeight: event.target.value as TextVariable["fontWeight"] })
+              }
               className="mt-1 w-full rounded-md border border-slate-200 px-3 py-2"
             >
               {FONT_WEIGHTS.map((weight) => (
