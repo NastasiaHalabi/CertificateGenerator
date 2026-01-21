@@ -180,6 +180,18 @@ export function VariableEditor({ variable, onChange }: VariableEditorProps) {
           </label>
         </div>
 
+        <div>
+          <label className="text-xs font-medium text-slate-500">Layer</label>
+          <select
+            value={variable.layer}
+            onChange={(event) => onChange({ layer: event.target.value as TextVariable["layer"] })}
+            className="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+          >
+            <option value="front">Front</option>
+            <option value="back">Back</option>
+          </select>
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="text-xs font-medium text-slate-500">Text Color</label>
@@ -215,14 +227,6 @@ export function VariableEditor({ variable, onChange }: VariableEditorProps) {
           Lock position
         </label>
 
-        <label className="flex items-center gap-2 text-xs font-medium text-slate-600">
-          <input
-            type="checkbox"
-            checked={variable.useSampleText}
-            onChange={(event) => onChange({ useSampleText: event.target.checked })}
-          />
-          Use sample text in PDFs
-        </label>
       </div>
     </section>
   );

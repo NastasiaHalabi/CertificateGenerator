@@ -67,6 +67,11 @@ export function TemplateUploader({ template, onUpload }: TemplateUploaderProps) 
       {template && (
         <div className="mt-4 text-sm text-slate-600">
           <p>Dimensions: {template.width} x {template.height}px</p>
+          {template.wasUpscaled && (
+            <p className="mt-1 text-amber-600">
+              Converted to 800x600px from {template.originalWidth} x {template.originalHeight}px.
+            </p>
+          )}
           <p className="mt-1">Filename: {template.file.name}</p>
         </div>
       )}

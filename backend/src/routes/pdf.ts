@@ -1,13 +1,19 @@
 import { Router } from "express";
 import { generatePdfBuffer } from "../utils/pdfGenerator";
 import { mergePdfBuffers } from "../utils/pdfMerger";
-import { sendCertificateEmail } from "../utils/emailSender";
+import { isEmailConfigured, sendCertificateEmail } from "../utils/emailSender";
 import { GenerationRequest } from "../types";
 
 function fillTemplate(template: string, row: Record<string, string>): string {
+  const normalized = new Map<string, string>();
+  Object.entries(row).forEach(([key, value]) => {
+    normalized.set(key.trim().toLowerCase(), value ?? "");
+  });
   return template.replace(/\{([^}]+)\}/g, (match, key) => {
-    const value = row[String(key).trim()];
-    return value !== undefined && value !== null && String(value) !== "" ? String(value) : match;
+    const token = String(key).trim().toLowerCase();
+    const value = normalized.get(token);
+    if (value === undefined || value === null) return "";
+    return String(value);
   });
 }
 
@@ -66,7 +72,7 @@ router.post("/generate", async (req, res) => {
       return res.status(400).json({ error: "Maximum 1000 rows per batch." });
     }
 
-    if (!options?.filename) {
+    if (!options) {
       return res.status(400).json({ error: "PDF options are required." });
     }
 
@@ -75,18 +81,21 @@ router.post("/generate", async (req, res) => {
     const emailStatuses: Array<{ row: number; email: string; status: string; error: string }> = [];
     const includeIndividual = options.outputFormat !== "merged";
     const includeMerged = options.outputFormat !== "individual";
-    const shouldSendEmail = Boolean(options.sendEmail);
+    const emailConfigured = isEmailConfigured();
+    const shouldSendEmail = Boolean(options.sendEmail && emailConfigured);
 
     for (let index = 0; index < rows.length; index += 1) {
       const row = rows[index];
-      const rawFilename = row.__filename || row[options.filenameColumn || ""] || "";
+      const rawFilename =
+        options.attachmentName || row.__filename || row[options.filenameColumn || ""] || "";
       const safeName = String(rawFilename || "")
         .trim()
-        .replace(/[^a-zA-Z0-9 _-]/g, "")
+        .replace(/[\\/:*?"<>|]/g, "")
         .replace(/\s+/g, "_")
         .slice(0, 60);
       const filenameSuffix = safeName || `certificate_${index + 1}`;
-      const filename = `${options.filename}_${filenameSuffix}.pdf`;
+      const prefix = options.filename ? `${options.filename}_` : "";
+      const filename = `${prefix}${filenameSuffix}.pdf`;
       const pdfBuffer = await generatePdfBuffer(
         templateDataUrl,
         templateWidth,
@@ -161,8 +170,11 @@ router.post("/generate", async (req, res) => {
 
     if (includeMerged) {
       const mergedBuffer = await mergePdfBuffers(buffers);
+      const mergedName = options.filename
+        ? `${options.filename}_all_certificates.pdf`
+        : "all_certificates.pdf";
       response.merged = {
-        filename: `${options.filename}_all_certificates.pdf`,
+        filename: mergedName,
         data: Buffer.from(mergedBuffer).toString("base64"),
       };
     }

@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 interface EmailSettingsPanelProps {
   availableHeaders: string[];
@@ -8,6 +8,8 @@ interface EmailSettingsPanelProps {
   onEmailColumnChange: (value: string) => void;
   filenameColumn: string;
   onFilenameColumnChange: (value: string) => void;
+  attachmentName: string;
+  onAttachmentNameChange: (value: string) => void;
   emailSubject: string;
   onEmailSubjectChange: (value: string) => void;
   emailBody: string;
@@ -29,6 +31,8 @@ export function EmailSettingsPanel({
   onEmailColumnChange,
   filenameColumn,
   onFilenameColumnChange,
+  attachmentName,
+  onAttachmentNameChange,
   emailSubject,
   onEmailSubjectChange,
   emailBody,
@@ -43,10 +47,23 @@ export function EmailSettingsPanel({
     () => availableHeaders.find((header) => /email/i.test(header)) || "",
     [availableHeaders],
   );
-  const defaultNameColumn = useMemo(
-    () => availableHeaders.find((header) => /name/i.test(header)) || "",
-    [availableHeaders],
-  );
+  const customOptionValue = "__custom__";
+  const [attachmentMode, setAttachmentMode] = useState<"custom" | "column" | "">("");
+  const selectedAttachmentOption =
+    attachmentMode === "custom" ? customOptionValue : filenameColumn || "";
+  const isCustomSelected = attachmentMode === "custom";
+
+  useEffect(() => {
+    if (attachmentName.trim()) {
+      setAttachmentMode("custom");
+      return;
+    }
+    if (filenameColumn) {
+      setAttachmentMode("column");
+      return;
+    }
+    setAttachmentMode("");
+  }, [attachmentName, filenameColumn]);
 
   const insertToken = (token: string) => {
     const textarea = emailBodyRef.current;
@@ -107,19 +124,47 @@ export function EmailSettingsPanel({
                 </select>
               </div>
               <div>
-                <label className="text-xs font-medium text-slate-500">Filename column</label>
+                <label className="text-xs font-medium text-slate-500">Attachment name</label>
                 <select
-                  value={filenameColumn || defaultNameColumn}
-                  onChange={(event) => onFilenameColumnChange(event.target.value)}
+                  value={selectedAttachmentOption}
+                  onChange={(event) => {
+                    const nextValue = event.target.value;
+                    if (nextValue === customOptionValue) {
+                      onFilenameColumnChange("");
+                      onAttachmentNameChange("");
+                      setAttachmentMode("custom");
+                      return;
+                    }
+                    onFilenameColumnChange(nextValue);
+                    onAttachmentNameChange("");
+                    setAttachmentMode(nextValue ? "column" : "");
+                  }}
                   className="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
                 >
                   <option value="">Select column</option>
+                  <option value={customOptionValue}>Customized</option>
                   {availableHeaders.map((header) => (
                     <option key={header} value={header}>
                       {header}
                     </option>
                   ))}
                 </select>
+                <input
+                  value={attachmentName}
+                  onChange={(event) => {
+                    onAttachmentNameChange(event.target.value);
+                    if (event.target.value.trim()) {
+                      onFilenameColumnChange("");
+                      setAttachmentMode("custom");
+                    }
+                  }}
+                  disabled={!isCustomSelected}
+                  placeholder="Or enter a custom attachment name"
+                  className="mt-2 w-full rounded-md border border-slate-200 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
+                />
+                <p className="mt-1 text-[11px] text-slate-400">
+                  Custom name overrides the column value.
+                </p>
               </div>
             </div>
             <div>

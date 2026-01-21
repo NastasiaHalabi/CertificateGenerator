@@ -13,4 +13,5 @@ export interface PDFGenerationOptions {
   emailBcc?: string;
   emailColumn?: string;
   filenameColumn?: string;
+  attachmentName?: string;
 }

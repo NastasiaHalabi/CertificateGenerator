@@ -9,32 +9,58 @@ interface EmailPayload {
   attachment: { filename: string; content: Uint8Array | Buffer };
 }
 
-function getEnvValue(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
+interface EmailConfig {
+  host: string;
+  port: number;
+  user: string;
+  pass: string;
+  from: string;
+}
+
+function getEmailConfig(): EmailConfig | null {
+  const host = process.env.SMTP_SERVER;
+  const port = process.env.SMTP_PORT;
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+  const from = process.env.MAIL_FROM;
+
+  if (!host || !port || !user || !pass || !from) {
+    return null;
   }
-  return value;
+
+  return {
+    host,
+    port: Number(port),
+    user,
+    pass,
+    from,
+  };
+}
+
+export function isEmailConfigured(): boolean {
+  return Boolean(getEmailConfig());
 }
 
 /**
  * Send an email with a PDF attachment using SMTP.
  */
 export async function sendCertificateEmail(payload: EmailPayload) {
+  const config = getEmailConfig();
+  if (!config) {
+    throw new Error("Email is not configured.");
+  }
   const transporter = nodemailer.createTransport({
-    host: getEnvValue("SMTP_SERVER"),
-    port: Number(getEnvValue("SMTP_PORT")),
+    host: config.host,
+    port: config.port,
     secure: false,
     auth: {
-      user: getEnvValue("SMTP_USER"),
-      pass: getEnvValue("SMTP_PASS"),
+      user: config.user,
+      pass: config.pass,
     },
   });
 
-  const from = getEnvValue("MAIL_FROM");
-
   await transporter.sendMail({
-    from,
+    from: config.from,
     to: payload.to,
     cc: payload.cc ? payload.cc.split(/[;,]/).map((item) => item.trim()).filter(Boolean).join(",") : undefined,
     bcc: payload.bcc ? payload.bcc.split(/[;,]/).map((item) => item.trim()).filter(Boolean).join(",") : undefined,

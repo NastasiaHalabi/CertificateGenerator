@@ -45,10 +45,12 @@ export function useCanvas({
   const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
   const canvasRef = useRef<Canvas | null>(null);
   const isApplyingPreviewRef = useRef(false);
+  const isSyncPausedRef = useRef(false);
+  const selectionScale = 1.08;
 
   const syncVariableFromObject = useCallback(
     (object: FabricObject) => {
-      if (isApplyingPreviewRef.current) return;
+      if (isApplyingPreviewRef.current || isSyncPausedRef.current) return;
       const id = getObjectId(object);
       if (!id) return;
       const textObject = object as IText;
@@ -167,7 +169,7 @@ export function useCanvas({
           charSpacing: variable.letterSpacing * 1000,
           lineHeight: variable.lineHeight || 1.2,
           hasControls: !variable.locked,
-          hasBorders: true,
+          hasBorders: false,
           selectable: true,
           scaleX: 1,
           scaleY: 1,
@@ -211,14 +213,44 @@ export function useCanvas({
       }
     });
 
+    const selectableObjects = canvas.getObjects().filter((object) => getObjectId(object));
+    const orderedVariables = [...variables].sort((a, b) => {
+      if (a.layer === b.layer) return 0;
+      return a.layer === "back" ? -1 : 1;
+    });
+    const orderedObjects = orderedVariables
+      .map((variable) => selectableObjects.find((item) => getObjectId(item) === variable.id))
+      .filter((object): object is FabricObject => Boolean(object));
+    if (orderedObjects.length > 0) {
+      selectableObjects.forEach((object) => canvas.remove(object));
+      orderedObjects.forEach((object) => canvas.add(object));
+    }
+    isSyncPausedRef.current = true;
+    selectableObjects.forEach((object) => {
+      const isSelected = getObjectId(object) === selectedVariableId;
+      object.set({
+        hasBorders: isSelected,
+        borderColor: isSelected ? "#2563eb" : undefined,
+        cornerColor: isSelected ? "#2563eb" : undefined,
+        backgroundColor: isSelected ? "rgba(37, 99, 235, 0.12)" : "",
+        stroke: isSelected ? "#2563eb" : undefined,
+        strokeWidth: isSelected ? 1 : 0,
+        scaleX: isSelected ? selectionScale : 1,
+        scaleY: isSelected ? selectionScale : 1,
+      });
+      object.setCoords();
+    });
     if (selectedVariableId) {
-      const activeObject = canvas
-        .getObjects()
-        .find((object) => getObjectId(object) === selectedVariableId);
+      const activeObject = selectableObjects.find(
+        (object) => getObjectId(object) === selectedVariableId,
+      );
       if (activeObject) {
         canvas.setActiveObject(activeObject);
       }
+    } else {
+      canvas.discardActiveObject();
     }
+    isSyncPausedRef.current = false;
 
     requestAnimationFrame(() => {
       canvas.renderAll();

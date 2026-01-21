@@ -158,7 +158,7 @@ export function CertificateCanvas({
   return (
     <div
       ref={containerRef}
-      className={`relative flex h-[560px] items-center justify-center overflow-auto rounded-lg border border-dashed p-3 ${
+      className={`relative h-[560px] overflow-auto rounded-lg border border-dashed p-3 ${
         isDragActive ? "border-slate-400 bg-slate-100" : "border-slate-200 bg-slate-50"
       }`}
       onMouseDown={handlePanStart}
@@ -178,7 +178,13 @@ export function CertificateCanvas({
       }}
     >
       {template ? (
-        <canvas ref={canvasElementRef} className="block max-w-full" />
+        <div
+          className={`flex min-h-full min-w-full ${
+            zoom > 1 ? "items-start justify-start" : "items-center justify-center"
+          }`}
+        >
+          <canvas ref={canvasElementRef} className="block shrink-0" />
+        </div>
       ) : (
         <div className="flex w-full flex-col items-center justify-center gap-3 text-center">
           <p className="text-sm text-slate-500">Upload or drag and drop a template to start editing.</p>

@@ -2,6 +2,8 @@ import { PDFDocument, PDFFont, StandardFonts, degrees, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { readFile } from "fs/promises";
 import path from "path";
+import arabicReshaper from "arabic-reshaper";
+import bidiFactory from "bidi-js";
 import { GenerationRequest, TextVariable } from "../types";
 
 function dataUrlToBuffer(dataUrl: string): Uint8Array {
@@ -29,6 +31,21 @@ const publicSansCache: {
   extraBold?: Uint8Array;
 } = {};
 
+const arabicFontCache: {
+  regular?: Uint8Array;
+} = {};
+
+const bidi = bidiFactory();
+
+function containsArabic(text: string): boolean {
+  return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/.test(text);
+}
+
+function shapeArabicText(text: string): string {
+  if (!text) return text;
+  return arabicReshaper.convertArabic(text);
+}
+
 async function loadPublicSansFonts() {
   if (publicSansCache.regular && publicSansCache.bold && publicSansCache.extraBold) {
     return publicSansCache;
@@ -50,6 +67,19 @@ async function loadPublicSansFonts() {
   return publicSansCache;
 }
 
+async function loadArabicFont() {
+  if (arabicFontCache.regular) return arabicFontCache;
+  const basePath = path.join(process.cwd(), "assets", "fonts");
+  try {
+    const regular = await readFile(path.join(basePath, "NotoNaskhArabic-Regular.ttf"));
+    arabicFontCache.regular = new Uint8Array(regular);
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error("Failed to load Arabic font:", error);
+  }
+  return arabicFontCache;
+}
+
 function resolveWeightLabel(weight: string) {
   if (weight === "bold") return "bold";
   const numeric = Number(weight);
@@ -64,10 +94,23 @@ async function resolveFont(
   pdf: PDFDocument,
   variable: TextVariable,
   fontCache: Map<string, PDFFont>,
+  textToRender: string,
 ): Promise<PDFFont> {
   const family = normalizeFontFamily(variable.fontFamily);
   const isBold = variable.fontWeight === "bold" || Number(variable.fontWeight) >= 600;
   const isItalic = variable.fontStyle === "italic";
+
+  if (containsArabic(textToRender)) {
+    const fonts = await loadArabicFont();
+    const key = "arabic-regular";
+    const cached = fontCache.get(key);
+    if (cached) return cached;
+    if (fonts.regular) {
+      const embedded = await pdf.embedFont(fonts.regular);
+      fontCache.set(key, embedded);
+      return embedded;
+    }
+  }
 
   if (family === "public-sans") {
     const fonts = await loadPublicSansFonts();
@@ -137,8 +180,8 @@ function getAlignedX(
 }
 
 function pxToPt(value: number): number {
-  // PDF uses points; convert from CSS px (96dpi) to points (72dpi).
-  return value * 0.75;
+  // Keep font sizing in the same units as the template dimensions.
+  return value;
 }
 
 /**
@@ -171,27 +214,48 @@ export async function generatePdfBuffer(
     opacity: 1,
   });
 
-  for (const variable of variables) {
+  const orderedVariables = [...variables].sort((a, b) => {
+    const layerA = a.layer || "front";
+    const layerB = b.layer || "front";
+    if (layerA === layerB) return 0;
+    return layerA === "back" ? -1 : 1;
+  });
+
+  for (const variable of orderedVariables) {
     const value = row[variable.name] || variable.text;
-    const font = await resolveFont(pdf, variable, fontCache);
+    const font = await resolveFont(pdf, variable, fontCache, String(value));
     const fontSize = pxToPt(variable.fontSize);
-    const lines = String(value).split("\n");
+    const rawLines = String(value).split("\n");
     const lineHeight = (variable.lineHeight || 1.2) * fontSize;
     const color = hexToRgb(variable.color);
+    const baselineOffset = fontSize * 0.88;
 
-    lines.forEach((line, index) => {
-      const textWidth = font.widthOfTextAtSize(line, fontSize);
+    rawLines.forEach((line, index) => {
+      const isArabicLine = containsArabic(line);
+      const shapedLine = isArabicLine ? shapeArabicText(line) : line;
+      const textWidth = font.widthOfTextAtSize(shapedLine, fontSize);
       const x = getAlignedX(variable, textWidth, templateWidth);
       const yFromTop = variable.y + index * lineHeight;
-      const y = templateHeight - yFromTop - fontSize;
-      page.drawText(line, {
-        x,
-        y,
-        size: fontSize,
-        font,
-        color: rgb(color.r, color.g, color.b),
-        rotate: degrees(variable.rotation),
-      });
+      const lineBaselineOffset = isArabicLine ? baselineOffset * 0.85 : baselineOffset;
+      const y = templateHeight - yFromTop - lineBaselineOffset;
+      const isBold = variable.fontWeight === "bold" || Number(variable.fontWeight) >= 700;
+      const drawText = (offsetX = 0) =>
+        page.drawText(shapedLine, {
+          x: x + offsetX,
+          y,
+          size: fontSize,
+          font,
+          color: rgb(color.r, color.g, color.b),
+          rotate: degrees(variable.rotation),
+        });
+
+      drawText();
+      if (isArabicLine && isBold) {
+        drawText(0.6);
+      }
+      if (isArabicLine && Number(variable.fontWeight) >= 800) {
+        drawText(1.1);
+      }
     });
   }
 

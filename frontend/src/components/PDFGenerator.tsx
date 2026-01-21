@@ -20,6 +20,7 @@ interface PDFGeneratorProps {
   emailBcc: string;
   emailColumn: string;
   filenameColumn: string;
+  attachmentName: string;
 }
 
 /**
@@ -37,9 +38,10 @@ export function PDFGenerator({
   emailBcc,
   emailColumn,
   filenameColumn,
+  attachmentName,
 }: PDFGeneratorProps) {
   const { generate, isGenerating, progress, error } = usePDFGenerator();
-  const [filename, setFilename] = useState("certificate");
+  const [filename, setFilename] = useState("");
   const [quality, setQuality] = useState<PDFGenerationOptions["quality"]>("high");
   const [outputFormat, setOutputFormat] = useState<PDFGenerationOptions["outputFormat"]>("both");
   const [includeIndex, setIncludeIndex] = useState(false);
@@ -94,7 +96,7 @@ export function PDFGenerator({
 
     try {
       const result = await generate(template, variables, excelData, mappings, {
-        filename,
+        filename: filename.trim(),
         outputFormat,
         quality,
         includeIndex,
@@ -104,7 +106,8 @@ export function PDFGenerator({
         emailCc,
         emailBcc,
         emailColumn: emailColumn || defaultEmailColumn,
-        filenameColumn: filenameColumn || defaultNameColumn,
+        filenameColumn: attachmentName ? "" : filenameColumn || defaultNameColumn,
+        attachmentName,
       });
 
       if (result.individual) {
@@ -117,7 +120,10 @@ export function PDFGenerator({
         const zipUrl = URL.createObjectURL(zipBlob);
         const link = document.createElement("a");
         link.href = zipUrl;
-        link.download = `${filename}_certificates.zip`;
+        const zipName = filename.trim()
+          ? `${filename.trim()}_certificates.zip`
+          : "certificates.zip";
+        link.download = zipName;
         link.click();
         URL.revokeObjectURL(zipUrl);
       }
@@ -153,10 +159,11 @@ export function PDFGenerator({
 
       <div className="mt-4 grid gap-4 text-sm md:grid-cols-2">
         <div>
-          <label className="text-xs font-medium text-slate-500">Base filename</label>
+          <label className="text-xs font-medium text-slate-500">Base filename (optional)</label>
           <input
             value={filename}
             onChange={(event) => setFilename(event.target.value)}
+            placeholder="e.g., certificates"
             className="mt-1 w-full rounded-md border border-slate-200 px-3 py-2"
           />
         </div>
@@ -197,7 +204,7 @@ export function PDFGenerator({
       <div className="mt-4 flex flex-col gap-2">
         <button
           type="button"
-          disabled={!canGenerate || isGenerating}
+          disabled={isGenerating}
           onClick={handleGenerate}
           className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
         >

@@ -32,6 +32,9 @@ export function applyMappings(
 ): Record<string, string>[] {
   return excelData.rows.map((row) => {
     const mapped: Record<string, string> = {};
+    Object.entries(row).forEach(([key, value]) => {
+      mapped[key] = value ?? "";
+    });
     variables.forEach((variable) => {
       const mapping = mappings.find((map) => map.variableName === variable.name);
       const column = mapping?.excelColumn || "";
@@ -39,7 +42,8 @@ export function applyMappings(
         mapped[variable.name] = variable.text;
         return;
       }
-      mapped[variable.name] = row[column] || mapping?.defaultValue || variable.text;
+      const value = column ? row[column] : "";
+      mapped[variable.name] = value ?? "";
     });
     if (extraColumns?.emailColumn) {
       mapped.__email = row[extraColumns.emailColumn] || "";

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { TextVariable } from "../types/variable.types";
 
 interface VariablesPanelProps {
@@ -6,12 +6,9 @@ interface VariablesPanelProps {
   selectedVariableId: string | null;
   onSelect: (id: string | null) => void;
   onAddVariable: (name: string) => void;
-  onQuickAdd: (name: string) => void;
   onDeleteVariable: (id: string) => void;
   onDuplicateVariable: (id: string) => void;
 }
-
-const DEFAULT_VARIABLES = ["name", "date", "course", "instructor"];
 
 /**
  * Panel for managing available and placed variables.
@@ -21,16 +18,10 @@ export function VariablesPanel({
   selectedVariableId,
   onSelect,
   onAddVariable,
-  onQuickAdd,
   onDeleteVariable,
   onDuplicateVariable,
 }: VariablesPanelProps) {
   const [customName, setCustomName] = useState("");
-
-  const availableVariables = useMemo(() => {
-    const existing = new Set(variables.map((variable) => variable.name.toLowerCase()));
-    return DEFAULT_VARIABLES.filter((name) => !existing.has(name.toLowerCase()));
-  }, [variables]);
 
   const handleAddCustom = () => {
     if (!customName.trim()) return;
@@ -41,23 +32,7 @@ export function VariablesPanel({
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
       <h2 className="text-lg font-semibold text-slate-900">Variables</h2>
-      <p className="text-sm text-slate-500">Drag variables onto the canvas or click to add.</p>
-
-      <div className="mt-4 space-y-2">
-        {availableVariables.map((name) => (
-          <button
-            key={name}
-            type="button"
-            draggable
-            onDragStart={(event) => event.dataTransfer.setData("text/variable-name", name)}
-            onClick={() => onQuickAdd(name)}
-            className="flex w-full cursor-grab items-center justify-between rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-          >
-            <span>{name}</span>
-            <span className="text-xs text-slate-400">Click to add</span>
-          </button>
-        ))}
-      </div>
+      <p className="text-sm text-slate-500">Create variables to place on the canvas.</p>
 
       <div className="mt-4">
         <label className="text-xs font-medium text-slate-500">Add custom variable</label>
@@ -65,7 +40,7 @@ export function VariablesPanel({
           <input
             value={customName}
             onChange={(event) => setCustomName(event.target.value)}
-            placeholder="e.g., student_id"
+            placeholder="e.g., name"
             className="flex-1 rounded-md border border-slate-200 px-3 py-2 text-sm"
           />
           <button

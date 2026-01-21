@@ -11,7 +11,7 @@ import { VariableMapper } from "./components/VariableMapper";
 import { PDFGenerator } from "./components/PDFGenerator";
 import { useCertificateContext } from "./context/CertificateContext";
 import { createTextVariable } from "./utils/variableFactory";
-import { applyMappings, buildAutoMappings } from "./utils/mapping";
+import { buildAutoMappings } from "./utils/mapping";
 import type { VariableMapping } from "./types/mapping.types";
 
 const VARIABLE_NAME_REGEX = /^[a-z0-9_]+$/i;
@@ -30,14 +30,17 @@ function App() {
     addVariable,
     updateVariable,
     removeVariable,
+    setVariables,
     setSelectedVariableId,
     setExcelData,
     setMappings,
   } = useCertificateContext();
   const [error, setError] = useState<string | null>(null);
   const [previewFirstRow, setPreviewFirstRow] = useState(false);
-  const [zoom, setZoom] = useState(1.1);
+  const [zoom, setZoom] = useState(1);
   const generatorRef = useRef<HTMLDivElement | null>(null);
+  const errorTimeoutRef = useRef<number | null>(null);
+  const previousTemplateRef = useRef<typeof template>(null);
   const [sendEmail, setSendEmail] = useState(false);
   const [emailSubject, setEmailSubject] = useState("Your certificate");
   const [emailBody, setEmailBody] = useState("Please find your certificate attached.");
@@ -45,6 +48,7 @@ function App() {
   const [emailBcc, setEmailBcc] = useState("");
   const [emailColumn, setEmailColumn] = useState("");
   const [filenameColumn, setFilenameColumn] = useState("");
+  const [attachmentName, setAttachmentName] = useState("");
 
   const selectedVariable = useMemo(
     () => variables.find((variable) => variable.id === selectedVariableId) || null,
@@ -53,8 +57,20 @@ function App() {
 
   const previewTextMap = useMemo(() => {
     if (!previewFirstRow || !excelData) return null;
-    const mappedRows = applyMappings(variables, excelData, mappings);
-    return mappedRows[0] || null;
+    const firstRow = excelData.rows[0];
+    if (!firstRow) return null;
+    const map: Record<string, string> = {};
+    variables.forEach((variable) => {
+      const mapping = mappings.find((entry) => entry.variableName === variable.name);
+      const column = mapping?.excelColumn;
+      if (!column || !(column in firstRow)) {
+        map[variable.name] = "";
+        return;
+      }
+      const value = firstRow[column];
+      map[variable.name] = value ? String(value) : "";
+    });
+    return map;
   }, [previewFirstRow, excelData, variables, mappings]);
 
   const getUniqueName = (baseName: string) => {
@@ -66,6 +82,24 @@ function App() {
     }
     return name;
   };
+
+  useEffect(() => {
+    const previous = previousTemplateRef.current;
+    if (previous && template) {
+      const widthRatio = template.width / previous.width;
+      const heightRatio = template.height / previous.height;
+      if (widthRatio !== 1 || heightRatio !== 1) {
+        setVariables((prev) =>
+          prev.map((variable) => ({
+            ...variable,
+            x: variable.x * widthRatio,
+            y: variable.y * heightRatio,
+          })),
+        );
+      }
+    }
+    previousTemplateRef.current = template;
+  }, [template, setVariables]);
 
   useEffect(() => {
     if (!excelData) {
@@ -82,16 +116,24 @@ function App() {
     });
   }, [excelData, variables, setMappings]);
 
-  const handleAddVariable = (name: string, x = 120, y = 120) => {
+  const handleAddVariable = (name: string, x = 300, y = 450) => {
     if (!VARIABLE_NAME_REGEX.test(name)) {
       setError("Variable names must be alphanumeric with underscores only.");
       return;
     }
     if (variables.some((variable) => variable.name.toLowerCase() === name.toLowerCase())) {
       setError("Variable names must be unique.");
+      if (errorTimeoutRef.current) {
+        window.clearTimeout(errorTimeoutRef.current);
+      }
+      errorTimeoutRef.current = window.setTimeout(() => {
+        setError(null);
+      }, 2000);
       return;
     }
-    addVariable(createTextVariable(name, x, y));
+    const nextVariable = createTextVariable(name, x, y);
+    addVariable(nextVariable);
+    setSelectedVariableId(nextVariable.id);
     setError(null);
   };
 
@@ -137,7 +179,6 @@ function App() {
               selectedVariableId={selectedVariableId}
               onSelect={setSelectedVariableId}
               onAddVariable={(name) => handleAddVariable(name)}
-              onQuickAdd={(name) => handleAddVariable(name)}
               onDeleteVariable={removeVariable}
               onDuplicateVariable={handleDuplicate}
             />
@@ -214,6 +255,8 @@ function App() {
                   onEmailColumnChange={setEmailColumn}
                   filenameColumn={filenameColumn}
                   onFilenameColumnChange={setFilenameColumn}
+                  attachmentName={attachmentName}
+                  onAttachmentNameChange={setAttachmentName}
                   emailSubject={emailSubject}
                   onEmailSubjectChange={setEmailSubject}
                   emailBody={emailBody}
@@ -256,6 +299,7 @@ function App() {
                 emailBcc={emailBcc}
                 emailColumn={emailColumn}
                 filenameColumn={filenameColumn}
+                attachmentName={attachmentName}
               />
             </div>
           )}

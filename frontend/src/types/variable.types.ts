@@ -13,6 +13,7 @@ export type FontWeight =
 
 export type FontStyle = "normal" | "italic";
 export type TextAlign = "left" | "center" | "right";
+export type TextLayer = "front" | "back";
 
 export interface TextVariable {
   id: string;
@@ -31,4 +32,5 @@ export interface TextVariable {
   letterSpacing: number;
   lineHeight: number;
   locked: boolean;
+  layer: TextLayer;
 }

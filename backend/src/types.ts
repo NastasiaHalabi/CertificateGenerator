@@ -13,6 +13,7 @@ export interface TextVariable {
   textAlign: "left" | "center" | "right";
   letterSpacing: number;
   lineHeight: number;
+  layer?: "front" | "back";
 }
 
 export interface PDFGenerationOptions {
@@ -27,6 +28,7 @@ export interface PDFGenerationOptions {
   emailBcc?: string;
   emailColumn?: string;
   filenameColumn?: string;
+  attachmentName?: string;
 }
 
 export interface GenerationRequest {

@@ -4,4 +4,8 @@ export interface CertificateTemplate {
   previewUrl: string;
   width: number;
   height: number;
+  wasResized?: boolean;
+  originalWidth?: number;
+  originalHeight?: number;
+  wasUpscaled?: boolean;
 }
