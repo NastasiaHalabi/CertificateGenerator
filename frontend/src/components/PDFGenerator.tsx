@@ -43,7 +43,7 @@ export function PDFGenerator({
   const { generate, isGenerating, progress, error } = usePDFGenerator();
   const [filename, setFilename] = useState("");
   const [quality, setQuality] = useState<PDFGenerationOptions["quality"]>("high");
-  const [outputFormat, setOutputFormat] = useState<PDFGenerationOptions["outputFormat"]>("both");
+  const [outputFormat, setOutputFormat] = useState<PDFGenerationOptions["outputFormat"]>("merged");
   const [includeIndex, setIncludeIndex] = useState(false);
   const [downloadMessage, setDownloadMessage] = useState<string | null>(null);
   const [isSendingEmails, setIsSendingEmails] = useState(false);
@@ -197,6 +197,14 @@ export function PDFGenerator({
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      {isSendingEmails && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40">
+          <div className="flex flex-col items-center gap-3 rounded-lg bg-white px-6 py-5 text-sm text-slate-700 shadow-lg">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-slate-900" />
+            <div>Please wait until all emails are sent.</div>
+          </div>
+        </div>
+      )}
       <h2 className="text-lg font-semibold text-slate-900">Generate Certificates</h2>
 
       {exceedsLimit && (
