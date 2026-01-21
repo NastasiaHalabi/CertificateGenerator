@@ -4,7 +4,7 @@ import { readFile } from "fs/promises";
 import path from "path";
 import arabicReshaper from "arabic-reshaper";
 import bidiFactory from "bidi-js";
-import type { GenerationRequest, TextVariable } from "./types";
+import type { GenerationRequest, TextVariable } from "./types.js";
 
 const bidi = bidiFactory();
 

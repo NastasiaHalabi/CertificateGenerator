@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { generatePdfBuffer } from "../_lib/pdfGenerator";
-import { mergePdfBuffers } from "../_lib/pdfMerger";
-import { isEmailConfigured, sendCertificateEmail } from "../_lib/emailSender";
-import type { GenerationRequest } from "../_lib/types";
+import { generatePdfBuffer } from "../_lib/pdfGenerator.js";
+import { mergePdfBuffers } from "../_lib/pdfMerger.js";
+import { isEmailConfigured, sendCertificateEmail } from "../_lib/emailSender.js";
+import type { GenerationRequest } from "../_lib/types.js";
 
 export const config = {
   runtime: "nodejs",
