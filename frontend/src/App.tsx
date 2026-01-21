@@ -41,6 +41,7 @@ function App() {
   const generatorRef = useRef<HTMLDivElement | null>(null);
   const errorTimeoutRef = useRef<number | null>(null);
   const previousTemplateRef = useRef<typeof template>(null);
+  const variablesRef = useRef(variables);
   const [sendEmail, setSendEmail] = useState(false);
   const [emailSubject, setEmailSubject] = useState("Your certificate");
   const [emailBody, setEmailBody] = useState("Please find your certificate attached.");
@@ -54,6 +55,10 @@ function App() {
     () => variables.find((variable) => variable.id === selectedVariableId) || null,
     [variables, selectedVariableId],
   );
+
+  useEffect(() => {
+    variablesRef.current = variables;
+  }, [variables]);
 
   const previewTextMap = useMemo(() => {
     if (!previewFirstRow || !excelData) return null;
@@ -93,8 +98,9 @@ function App() {
       const widthRatio = template.width / previous.width;
       const heightRatio = template.height / previous.height;
       if (widthRatio !== 1 || heightRatio !== 1) {
+        const currentVariables = variablesRef.current;
         setVariables(
-          variables.map((variable) => ({
+          currentVariables.map((variable) => ({
             ...variable,
             x: variable.x * widthRatio,
             y: variable.y * heightRatio,
@@ -103,7 +109,7 @@ function App() {
       }
     }
     previousTemplateRef.current = template;
-  }, [template, setVariables, variables]);
+  }, [template, setVariables]);
 
   useEffect(() => {
     if (!excelData) {
