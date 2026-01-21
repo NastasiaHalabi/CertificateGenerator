@@ -260,30 +260,38 @@ export async function generatePdfBuffer(
   pageIndex: number,
   includeIndex: boolean,
 ): Promise<Uint8Array> {
-  void quality;
-  const pdf = await PDFDocument.create();
-  pdf.registerFontkit(fontkit);
-  const fontCache = new Map<string, PDFFont>();
-  const page = pdf.addPage([templateWidth, templateHeight]);
-  const imageBytes = dataUrlToBuffer(templateDataUrl);
-  const isPng = templateDataUrl.startsWith("data:image/png");
-  const image = isPng ? await pdf.embedPng(imageBytes) : await pdf.embedJpg(imageBytes);
-  page.drawImage(image, {
-    x: 0,
-    y: 0,
-    width: templateWidth,
-    height: templateHeight,
-    opacity: 1,
-  });
+  const pdf = await generatePdfDocument(
+    templateDataUrl,
+    templateWidth,
+    templateHeight,
+    variables,
+    [row],
+    quality,
+    includeIndex,
+    pageIndex,
+  );
+  return pdf.save();
+}
 
-  const orderedVariables = [...variables].sort((a, b) => {
+function sortVariablesByLayer(variables: TextVariable[]) {
+  return [...variables].sort((a, b) => {
     const layerA = a.layer || "front";
     const layerB = b.layer || "front";
     if (layerA === layerB) return 0;
     return layerA === "back" ? -1 : 1;
   });
+}
 
-  for (const variable of orderedVariables) {
+async function drawRowToPage(
+  pdf: PDFDocument,
+  page: ReturnType<PDFDocument["addPage"]>,
+  templateWidth: number,
+  templateHeight: number,
+  variables: TextVariable[],
+  row: Record<string, string>,
+  fontCache: Map<string, PDFFont>,
+) {
+  for (const variable of variables) {
     const value = row[variable.name] || variable.text;
     const font = await resolveFont(pdf, variable, fontCache, String(value));
     const fontSize = variable.fontSize;
@@ -328,17 +336,61 @@ export async function generatePdfBuffer(
       });
     });
   }
+}
 
-  if (includeIndex) {
-    const font = await pdf.embedFont(StandardFonts.Helvetica);
-    page.drawText(String(pageIndex + 1), {
-      x: templateWidth - 24,
-      y: 16,
-      size: 10,
-      font,
-      color: rgb(0.4, 0.4, 0.4),
+/**
+ * Generate a PDF document containing one page per row.
+ */
+export async function generatePdfDocument(
+  templateDataUrl: string,
+  templateWidth: number,
+  templateHeight: number,
+  variables: TextVariable[],
+  rows: Array<Record<string, string>>,
+  quality: GenerationRequest["options"]["quality"],
+  includeIndex: boolean,
+  pageStartIndex = 0,
+): Promise<PDFDocument> {
+  void quality;
+  const pdf = await PDFDocument.create();
+  pdf.registerFontkit(fontkit);
+  const fontCache = new Map<string, PDFFont>();
+  const orderedVariables = sortVariablesByLayer(variables);
+  const imageBytes = dataUrlToBuffer(templateDataUrl);
+  const isPng = templateDataUrl.startsWith("data:image/png");
+  const image = isPng ? await pdf.embedPng(imageBytes) : await pdf.embedJpg(imageBytes);
+
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    const page = pdf.addPage([templateWidth, templateHeight]);
+    page.drawImage(image, {
+      x: 0,
+      y: 0,
+      width: templateWidth,
+      height: templateHeight,
+      opacity: 1,
     });
+    await drawRowToPage(
+      pdf,
+      page,
+      templateWidth,
+      templateHeight,
+      orderedVariables,
+      row,
+      fontCache,
+    );
+
+    if (includeIndex) {
+      const font = await pdf.embedFont(StandardFonts.Helvetica);
+      page.drawText(String(pageStartIndex + index + 1), {
+        x: templateWidth - 24,
+        y: 16,
+        size: 10,
+        font,
+        color: rgb(0.4, 0.4, 0.4),
+      });
+    }
   }
 
-  return pdf.save();
+  return pdf;
 }

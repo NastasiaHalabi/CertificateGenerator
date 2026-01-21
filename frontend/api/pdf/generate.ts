@@ -1,7 +1,8 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { generatePdfBuffer } from "../_lib/pdfGenerator.js";
-import { mergePdfBuffers } from "../_lib/pdfMerger.js";
+import { PDFDocument } from "pdf-lib";
+import { generatePdfDocument } from "../_lib/pdfGenerator.js";
 import { isEmailConfigured, sendCertificateEmail } from "../_lib/emailSender.js";
+import { createEmailJob, finalizeEmailJob, getEmailJob, updateEmailJobStatus } from "../_lib/emailJobs.js";
 import type { GenerationRequest } from "../_lib/types.js";
 
 export const config = {
@@ -74,89 +75,95 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: "PDF options are required." });
     }
 
-    const buffers: Uint8Array[] = [];
     const individual: { filename: string; data: string }[] = [];
     const emailStatuses: Array<{ row: number; email: string; status: string; error: string }> = [];
     const includeIndividual = options.outputFormat !== "merged";
     const includeMerged = options.outputFormat !== "individual";
     const emailConfigured = isEmailConfigured();
     const shouldSendEmail = Boolean(options.sendEmail && emailConfigured);
+    const shouldCreateIndividual = includeIndividual || shouldSendEmail;
+    const emailQueue: Array<{
+      rowIndex: number;
+      recipients: string[];
+      filename: string;
+      pdfBuffer: Uint8Array;
+      rowData: Record<string, string>;
+    }> = [];
+    let emailJobId: string | null = null;
 
-    for (let index = 0; index < rows.length; index += 1) {
-      const row = rows[index];
-      const rawFilename =
-        options.attachmentName || row.__filename || row[options.filenameColumn || ""] || "";
-      const safeName = String(rawFilename || "")
-        .trim()
-        .replace(/[\\/:*?"<>|]/g, "")
-        .replace(/\s+/g, "_")
-        .slice(0, 60);
-      const filenameSuffix = safeName || `certificate_${index + 1}`;
-      const prefix = options.filename ? `${options.filename}_` : "";
-      const filename = `${prefix}${filenameSuffix}.pdf`;
-      const pdfBuffer = await generatePdfBuffer(
-        templateDataUrl,
-        templateWidth,
-        templateHeight,
-        variables,
-        row,
-        options.quality,
-        index,
-        options.includeIndex,
-      );
-      buffers.push(pdfBuffer);
+    const pdfDoc = await generatePdfDocument(
+      templateDataUrl,
+      templateWidth,
+      templateHeight,
+      variables,
+      rows,
+      options.quality,
+      options.includeIndex,
+    );
 
-      if (includeIndividual) {
-        individual.push({
-          filename,
-          data: Buffer.from(pdfBuffer).toString("base64"),
-        });
-      }
+    if (shouldCreateIndividual) {
+      for (let index = 0; index < rows.length; index += 1) {
+        const row = rows[index];
+        const rawFilename =
+          options.attachmentName || row.__filename || row[options.filenameColumn || ""] || "";
+        const safeName = String(rawFilename || "")
+          .trim()
+          .replace(/[\\/:*?"<>|]/g, "")
+          .replace(/\s+/g, "_")
+          .slice(0, 60);
+        const filenameSuffix = safeName || `certificate_${index + 1}`;
+        const prefix = options.filename ? `${options.filename}_` : "";
+        const filename = `${prefix}${filenameSuffix}.pdf`;
 
-      if (shouldSendEmail) {
-        const rawTo = row.__email || row[options.emailColumn || ""] || "";
-        const recipients = parseEmails(rawTo);
-        if (recipients.length === 0) {
-          emailStatuses.push({
-            row: index + 1,
-            email: "",
-            status: "skipped",
-            error: "Missing email",
+        const singlePdf = await PDFDocument.create();
+        const [page] = await singlePdf.copyPages(pdfDoc, [index]);
+        singlePdf.addPage(page);
+        const pdfBuffer = await singlePdf.save();
+
+        if (includeIndividual) {
+          individual.push({
+            filename,
+            data: Buffer.from(pdfBuffer).toString("base64"),
           });
-          continue;
         }
 
-        const invalidEmails = recipients.filter((email) => !isValidEmail(email));
-        if (invalidEmails.length > 0) {
+        if (shouldSendEmail) {
+          const rawTo = row.__email || row[options.emailColumn || ""] || "";
+          const recipients = parseEmails(rawTo);
+          if (recipients.length === 0) {
+            emailStatuses.push({
+              row: index + 1,
+              email: "",
+              status: "skipped",
+              error: "Missing email",
+            });
+            continue;
+          }
+
+          const invalidEmails = recipients.filter((email) => !isValidEmail(email));
+          if (invalidEmails.length > 0) {
+            emailStatuses.push({
+              row: index + 1,
+              email: recipients.join(", "),
+              status: "failed",
+              error: `Invalid email(s): ${invalidEmails.join(", ")}`,
+            });
+            continue;
+          }
+
+          emailQueue.push({
+            rowIndex: index,
+            recipients,
+            filename,
+            pdfBuffer,
+            rowData: row,
+          });
           emailStatuses.push({
             row: index + 1,
             email: recipients.join(", "),
-            status: "failed",
-            error: `Invalid email(s): ${invalidEmails.join(", ")}`,
+            status: "queued",
+            error: "",
           });
-          continue;
-        }
-
-        const to = recipients.join(", ");
-        if (to) {
-          try {
-            await sendCertificateEmail({
-              to,
-              subject: fillTemplate(options.emailSubject || "Your certificate", row),
-              body: fillTemplate(options.emailBody || "Please find your certificate attached.", row),
-              cc: options.emailCc,
-              bcc: options.emailBcc,
-              attachment: { filename, content: pdfBuffer },
-            });
-            emailStatuses.push({ row: index + 1, email: to, status: "sent", error: "" });
-          } catch (err) {
-            emailStatuses.push({
-              row: index + 1,
-              email: to,
-              status: "failed",
-              error: err instanceof Error ? err.message : "Unknown error",
-            });
-          }
         }
       }
     }
@@ -172,7 +179,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (includeMerged) {
-      const mergedBuffer = await mergePdfBuffers(buffers);
+      const mergedBuffer = await pdfDoc.save();
       const mergedName = options.filename
         ? `${options.filename}_all_certificates.pdf`
         : "all_certificates.pdf";
@@ -190,7 +197,61 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       };
     }
 
-    return res.status(200).json(response);
+    if (shouldSendEmail) {
+      const reportName = options.filename
+        ? `${options.filename}_email_status.csv`
+        : "email_status.csv";
+      const job = createEmailJob(emailStatuses, emailQueue.length, reportName);
+      emailJobId = job.id;
+      response.emailJobId = emailJobId;
+    }
+
+    res.status(200).json(response);
+
+    if (shouldSendEmail && emailQueue.length > 0 && emailJobId) {
+      setImmediate(async () => {
+        for (const item of emailQueue) {
+          const to = item.recipients.join(", ");
+          if (!to) continue;
+          try {
+            await sendCertificateEmail({
+              to,
+              subject: fillTemplate(
+                options.emailSubject || "Your certificate",
+                item.rowData,
+              ),
+              body: fillTemplate(
+                options.emailBody || "Please find your certificate attached.",
+                item.rowData,
+              ),
+              cc: options.emailCc,
+              bcc: options.emailBcc,
+              attachment: { filename: item.filename, content: item.pdfBuffer },
+            });
+            updateEmailJobStatus(emailJobId, item.rowIndex + 1, "sent", "");
+          } catch (err) {
+            updateEmailJobStatus(
+              emailJobId,
+              item.rowIndex + 1,
+              "failed",
+              err instanceof Error ? err.message : "Unknown error",
+            );
+            // eslint-disable-next-line no-console
+            console.error(
+              `Email failed for row ${item.rowIndex + 1}:`,
+              err instanceof Error ? err.message : err,
+            );
+          }
+        }
+        const job = getEmailJob(emailJobId);
+        if (job) {
+          const finalCsv = buildEmailStatusCsv(job.statuses);
+          finalizeEmailJob(emailJobId, Buffer.from(finalCsv, "utf8").toString("base64"));
+        }
+      });
+    }
+
+    return;
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error("PDF generation failed:", error);

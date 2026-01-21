@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import JSZip from "jszip";
 import type { CertificateTemplate } from "../types/template.types";
 import type { TextVariable } from "../types/variable.types";
 import type { ExcelData } from "../types/excel.types";
 import type { VariableMapping } from "../types/mapping.types";
 import { usePDFGenerator } from "../hooks/usePDFGenerator";
+import { useEmailStatus } from "../hooks/useEmailStatus";
 import { validateMappings } from "../utils/mapping";
 import type { PDFGenerationOptions } from "../types/pdf.types";
 
@@ -46,6 +47,9 @@ export function PDFGenerator({
   const [outputFormat, setOutputFormat] = useState<PDFGenerationOptions["outputFormat"]>("both");
   const [includeIndex, setIncludeIndex] = useState(false);
   const [downloadMessage, setDownloadMessage] = useState<string | null>(null);
+  const [emailJobId, setEmailJobId] = useState<string | null>(null);
+  const [emailReportDownloaded, setEmailReportDownloaded] = useState(false);
+  const { status: emailStatus, error: emailStatusError } = useEmailStatus(emailJobId);
 
   const unmapped = useMemo(() => validateMappings(variables, mappings), [variables, mappings]);
   const availableHeaders = excelData?.headers ?? [];
@@ -93,6 +97,8 @@ export function PDFGenerator({
   const handleGenerate = async () => {
     if (!template || !excelData) return;
     setDownloadMessage(null);
+    setEmailJobId(null);
+    setEmailReportDownloaded(false);
 
     try {
       const result = await generate(template, variables, excelData, mappings, {
@@ -109,6 +115,10 @@ export function PDFGenerator({
         filenameColumn: attachmentName ? "" : filenameColumn || defaultNameColumn,
         attachmentName,
       });
+
+      if (result.emailJobId) {
+        setEmailJobId(result.emailJobId);
+      }
 
       if (result.individual) {
         const zip = new JSZip();
@@ -130,7 +140,7 @@ export function PDFGenerator({
       if (result.merged) {
         downloadFile(result.merged.filename, result.merged.data);
       }
-      if (result.emailReport) {
+      if (result.emailReport && !result.emailJobId) {
         downloadCsv(result.emailReport.filename, result.emailReport.data);
       }
       setDownloadMessage("PDFs downloaded successfully.");
@@ -138,6 +148,17 @@ export function PDFGenerator({
       console.error(err);
     }
   };
+
+  const emailProgressTotal = emailStatus?.total ?? 0;
+  const emailProgressDone = (emailStatus?.sent ?? 0) + (emailStatus?.failed ?? 0);
+  const emailProgressPercent =
+    emailProgressTotal > 0 ? Math.min(100, Math.round((emailProgressDone / emailProgressTotal) * 100)) : 0;
+
+  useEffect(() => {
+    if (!emailStatus?.done || !emailStatus.report || emailReportDownloaded) return;
+    downloadCsv(emailStatus.report.filename, emailStatus.report.data);
+    setEmailReportDownloaded(true);
+  }, [emailReportDownloaded, emailStatus]);
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -213,6 +234,25 @@ export function PDFGenerator({
         {isGenerating && (
           <div className="text-xs text-slate-500">Progress: {progress}%</div>
         )}
+        {sendEmail && emailJobId && emailStatus && (
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+            <div>
+              Email progress: {emailProgressDone}/{emailProgressTotal} sent
+              {emailStatus.failed > 0 ? `, ${emailStatus.failed} failed` : ""}
+              {emailStatus.skipped > 0 ? `, ${emailStatus.skipped} skipped` : ""}
+            </div>
+            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200">
+              <div
+                className="h-full rounded-full bg-slate-900 transition-all"
+                style={{ width: `${emailProgressPercent}%` }}
+              />
+            </div>
+            {emailStatus.done && (
+              <div className="mt-2 text-xs text-emerald-600">Email delivery completed.</div>
+            )}
+          </div>
+        )}
+        {emailStatusError && <div className="text-xs text-amber-600">{emailStatusError}</div>}
         {error && <div className="text-xs text-red-600">{error}</div>}
         {downloadMessage && <div className="text-xs text-emerald-600">{downloadMessage}</div>}
       </div>

@@ -10,6 +10,7 @@ interface GenerateResult {
   individual?: { filename: string; data: string }[];
   merged?: { filename: string; data: string };
   emailReport?: { filename: string; data: string };
+  emailJobId?: string;
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
