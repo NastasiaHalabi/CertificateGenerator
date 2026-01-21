@@ -1,8 +1,7 @@
-import { Router, type Response } from "express";
+import { Router } from "express";
 import { PDFDocument } from "pdf-lib";
 import { generatePdfDocument } from "../utils/pdfGenerator";
 import { isEmailConfigured, sendCertificateEmail } from "../utils/emailSender";
-import { createEmailJob, finalizeEmailJob, getEmailJob, updateEmailJobStatus } from "../utils/emailJobs";
 import { GenerationRequest } from "../types";
 
 function fillTemplate(template: string, row: Record<string, string>): string {
@@ -48,36 +47,6 @@ function isValidEmail(email: string): boolean {
 
 const router = Router();
 
-const sendEmailStatus = (jobId: string | undefined, res: Response) => {
-  if (!jobId) {
-    return res.status(400).json({ error: "Job id is required." });
-  }
-  const job = getEmailJob(jobId);
-  if (!job) {
-    return res.status(404).json({ error: "Email job not found." });
-  }
-  return res.json({
-    jobId: job.id,
-    total: job.total,
-    sent: job.sent,
-    failed: job.failed,
-    skipped: job.skipped,
-    done: job.done,
-    report: job.done && job.reportBase64
-      ? { filename: job.reportFilename, data: job.reportBase64 }
-      : undefined,
-  });
-};
-
-router.get("/email-status/:jobId", (req, res) => {
-  return sendEmailStatus(req.params.jobId, res);
-});
-
-router.get("/email-status", (req, res) => {
-  const jobId = typeof req.query.jobId === "string" ? req.query.jobId : undefined;
-  return sendEmailStatus(jobId, res);
-});
-
 router.post("/generate", async (req, res) => {
   try {
     const payload = req.body as GenerationRequest;
@@ -108,20 +77,9 @@ router.post("/generate", async (req, res) => {
     }
 
     const individual: { filename: string; data: string }[] = [];
-    const emailStatuses: Array<{ row: number; email: string; status: string; error: string }> = [];
     const includeIndividual = options.outputFormat !== "merged";
     const includeMerged = options.outputFormat !== "individual";
-    const emailConfigured = isEmailConfigured();
-    const shouldSendEmail = Boolean(options.sendEmail && emailConfigured);
-    const shouldCreateIndividual = includeIndividual || shouldSendEmail;
-    const emailQueue: Array<{
-      rowIndex: number;
-      recipients: string[];
-      filename: string;
-      pdfBuffer: Uint8Array;
-      rowData: Record<string, string>;
-    }> = [];
-    let emailJobId: string | null = null;
+    const shouldCreateIndividual = includeIndividual;
 
     const pdfDoc = await generatePdfDocument(
       templateDataUrl,
@@ -159,51 +117,12 @@ router.post("/generate", async (req, res) => {
           });
         }
 
-        if (shouldSendEmail) {
-          const rawTo = row.__email || row[options.emailColumn || ""] || "";
-          const recipients = parseEmails(rawTo);
-          if (recipients.length === 0) {
-            emailStatuses.push({
-              row: index + 1,
-              email: "",
-              status: "skipped",
-              error: "Missing email",
-            });
-            continue;
-          }
-
-          const invalidEmails = recipients.filter((email) => !isValidEmail(email));
-          if (invalidEmails.length > 0) {
-            emailStatuses.push({
-              row: index + 1,
-              email: recipients.join(", "),
-              status: "failed",
-              error: `Invalid email(s): ${invalidEmails.join(", ")}`,
-            });
-            continue;
-          }
-
-          emailQueue.push({
-            rowIndex: index,
-            recipients,
-            filename,
-            pdfBuffer,
-            rowData: row,
-          });
-          emailStatuses.push({
-            row: index + 1,
-            email: recipients.join(", "),
-            status: "queued",
-            error: "",
-          });
-        }
       }
     }
 
     const response: {
       individual?: { filename: string; data: string }[];
       merged?: { filename: string; data: string };
-      emailReport?: { filename: string; data: string };
     } = {};
 
     if (includeIndividual) {
@@ -221,73 +140,135 @@ router.post("/generate", async (req, res) => {
       };
     }
 
-    if (shouldSendEmail) {
-      const csv = buildEmailStatusCsv(emailStatuses);
-      response.emailReport = {
-        filename: `${options.filename}_email_status.csv`,
-        data: Buffer.from(csv, "utf8").toString("base64"),
-      };
-    }
-
-    if (shouldSendEmail) {
-      const reportName = options.filename
-        ? `${options.filename}_email_status.csv`
-        : "email_status.csv";
-      const job = createEmailJob(emailStatuses, emailQueue.length, reportName);
-      emailJobId = job.id;
-      response.emailJobId = emailJobId;
-    }
-
-    res.json(response);
-
-    if (shouldSendEmail && emailQueue.length > 0 && emailJobId) {
-      setImmediate(async () => {
-        for (const item of emailQueue) {
-          const to = item.recipients.join(", ");
-          if (!to) continue;
-          try {
-            await sendCertificateEmail({
-              to,
-              subject: fillTemplate(
-                options.emailSubject || "Your certificate",
-                item.rowData,
-              ),
-              body: fillTemplate(
-                options.emailBody || "Please find your certificate attached.",
-                item.rowData,
-              ),
-              cc: options.emailCc,
-              bcc: options.emailBcc,
-              attachment: { filename: item.filename, content: item.pdfBuffer },
-            });
-            updateEmailJobStatus(emailJobId, item.rowIndex + 1, "sent", "");
-          } catch (err) {
-            updateEmailJobStatus(
-              emailJobId,
-              item.rowIndex + 1,
-              "failed",
-              err instanceof Error ? err.message : "Unknown error",
-            );
-            // eslint-disable-next-line no-console
-            console.error(
-              `Email failed for row ${item.rowIndex + 1}:`,
-              err instanceof Error ? err.message : err,
-            );
-          }
-        }
-        const job = getEmailJob(emailJobId);
-        if (job) {
-          const finalCsv = buildEmailStatusCsv(job.statuses);
-          finalizeEmailJob(emailJobId, Buffer.from(finalCsv, "utf8").toString("base64"));
-        }
-      });
-    }
-
-    return;
+    return res.json(response);
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error("PDF generation failed:", error);
     return res.status(500).json({ error: "PDF generation failed." });
+  }
+});
+
+router.post("/send-emails", async (req, res) => {
+  try {
+    const payload = req.body as GenerationRequest;
+    const {
+      templateDataUrl,
+      templateWidth,
+      templateHeight,
+      variables,
+      rows,
+      options,
+    } = payload;
+
+    if (!templateDataUrl || !templateWidth || !templateHeight) {
+      return res.status(400).json({ error: "Template data is required." });
+    }
+    if (!rows || rows.length === 0) {
+      return res.status(400).json({ error: "Excel rows are required." });
+    }
+    if (!variables || variables.length === 0) {
+      return res.status(400).json({ error: "At least one variable is required." });
+    }
+    if (!options) {
+      return res.status(400).json({ error: "Email options are required." });
+    }
+
+    const emailConfigured = isEmailConfigured();
+    if (!options.sendEmail || !emailConfigured) {
+      return res.status(400).json({ error: "Email sending is not configured." });
+    }
+
+    const emailStatuses: Array<{ row: number; email: string; status: string; error: string }> = [];
+    const pdfDoc = await generatePdfDocument(
+      templateDataUrl,
+      templateWidth,
+      templateHeight,
+      variables,
+      rows,
+      options.quality,
+      options.includeIndex,
+    );
+
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index];
+      const rawFilename =
+        options.attachmentName || row.__filename || row[options.filenameColumn || ""] || "";
+      const safeName = String(rawFilename || "")
+        .trim()
+        .replace(/[\\/:*?"<>|]/g, "")
+        .replace(/\s+/g, "_")
+        .slice(0, 60);
+      const filenameSuffix = safeName || `certificate_${index + 1}`;
+      const prefix = options.filename ? `${options.filename}_` : "";
+      const filename = `${prefix}${filenameSuffix}.pdf`;
+
+      const rawTo = row.__email || row[options.emailColumn || ""] || "";
+      const recipients = parseEmails(rawTo);
+      if (recipients.length === 0) {
+        emailStatuses.push({
+          row: index + 1,
+          email: "",
+          status: "skipped",
+          error: "Missing email",
+        });
+        continue;
+      }
+
+      const invalidEmails = recipients.filter((email) => !isValidEmail(email));
+      if (invalidEmails.length > 0) {
+        emailStatuses.push({
+          row: index + 1,
+          email: recipients.join(", "),
+          status: "failed",
+          error: `Invalid email(s): ${invalidEmails.join(", ")}`,
+        });
+        continue;
+      }
+
+      const singlePdf = await PDFDocument.create();
+      const [page] = await singlePdf.copyPages(pdfDoc, [index]);
+      singlePdf.addPage(page);
+      const pdfBuffer = await singlePdf.save();
+
+      try {
+        await sendCertificateEmail({
+          to: recipients.join(", "),
+          subject: fillTemplate(options.emailSubject || "Your certificate", row),
+          body: fillTemplate(options.emailBody || "Please find your certificate attached.", row),
+          cc: options.emailCc,
+          bcc: options.emailBcc,
+          attachment: { filename, content: pdfBuffer },
+        });
+        emailStatuses.push({
+          row: index + 1,
+          email: recipients.join(", "),
+          status: "sent",
+          error: "",
+        });
+      } catch (err) {
+        emailStatuses.push({
+          row: index + 1,
+          email: recipients.join(", "),
+          status: "failed",
+          error: err instanceof Error ? err.message : "Unknown error",
+        });
+      }
+    }
+
+    const csv = buildEmailStatusCsv(emailStatuses);
+    const reportName = options.filename
+      ? `${options.filename}_email_status.csv`
+      : "email_status.csv";
+    return res.json({
+      emailReport: {
+        filename: reportName,
+        data: Buffer.from(csv, "utf8").toString("base64"),
+      },
+    });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error("Email sending failed:", error);
+    return res.status(500).json({ error: "Email sending failed." });
   }
 });
 

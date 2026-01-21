@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import JSZip from "jszip";
 import type { CertificateTemplate } from "../types/template.types";
 import type { TextVariable } from "../types/variable.types";
 import type { ExcelData } from "../types/excel.types";
 import type { VariableMapping } from "../types/mapping.types";
 import { usePDFGenerator } from "../hooks/usePDFGenerator";
-import { useEmailStatus } from "../hooks/useEmailStatus";
 import { validateMappings } from "../utils/mapping";
 import type { PDFGenerationOptions } from "../types/pdf.types";
 
@@ -47,9 +46,8 @@ export function PDFGenerator({
   const [outputFormat, setOutputFormat] = useState<PDFGenerationOptions["outputFormat"]>("both");
   const [includeIndex, setIncludeIndex] = useState(false);
   const [downloadMessage, setDownloadMessage] = useState<string | null>(null);
-  const [emailJobId, setEmailJobId] = useState<string | null>(null);
-  const [emailReportDownloaded, setEmailReportDownloaded] = useState(false);
-  const { status: emailStatus, error: emailStatusError } = useEmailStatus(emailJobId);
+  const [isSendingEmails, setIsSendingEmails] = useState(false);
+  const [emailStatusMessage, setEmailStatusMessage] = useState<string | null>(null);
 
   const unmapped = useMemo(() => validateMappings(variables, mappings), [variables, mappings]);
   const availableHeaders = excelData?.headers ?? [];
@@ -97,8 +95,7 @@ export function PDFGenerator({
   const handleGenerate = async () => {
     if (!template || !excelData) return;
     setDownloadMessage(null);
-    setEmailJobId(null);
-    setEmailReportDownloaded(false);
+    setEmailStatusMessage(null);
 
     try {
       const result = await generate(template, variables, excelData, mappings, {
@@ -115,10 +112,6 @@ export function PDFGenerator({
         filenameColumn: attachmentName ? "" : filenameColumn || defaultNameColumn,
         attachmentName,
       });
-
-      if (result.emailJobId) {
-        setEmailJobId(result.emailJobId);
-      }
 
       if (result.individual) {
         const zip = new JSZip();
@@ -140,25 +133,67 @@ export function PDFGenerator({
       if (result.merged) {
         downloadFile(result.merged.filename, result.merged.data);
       }
-      if (result.emailReport && !result.emailJobId) {
+      if (result.emailReport) {
         downloadCsv(result.emailReport.filename, result.emailReport.data);
       }
       setDownloadMessage("PDFs downloaded successfully.");
+
+      if (sendEmail) {
+        setIsSendingEmails(true);
+        setEmailStatusMessage("Please wait until all emails are sent.");
+        try {
+          const response = await fetch("/api/pdf/send-emails", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              templateDataUrl: template.previewUrl,
+              templateWidth: template.width,
+              templateHeight: template.height,
+              variables,
+              rows: excelData.rows,
+              options: {
+                filename: filename.trim(),
+                outputFormat,
+                quality,
+                includeIndex,
+                sendEmail,
+                emailSubject,
+                emailBody,
+                emailCc,
+                emailBcc,
+                emailColumn: emailColumn || defaultEmailColumn,
+                filenameColumn: attachmentName ? "" : filenameColumn || defaultNameColumn,
+                attachmentName,
+              },
+            }),
+          });
+
+          if (!response.ok) {
+            const body = (await response.json()) as { error?: string };
+            throw new Error(body.error || "Email sending failed.");
+          }
+
+          const emailResult = (await response.json()) as {
+            emailReport?: { filename: string; data: string };
+          };
+
+          if (emailResult.emailReport) {
+            downloadCsv(emailResult.emailReport.filename, emailResult.emailReport.data);
+          }
+          setEmailStatusMessage("All emails sent. Status report downloaded.");
+        } catch (err) {
+          console.error(err);
+          setEmailStatusMessage(
+            err instanceof Error ? err.message : "Failed to send emails.",
+          );
+        } finally {
+          setIsSendingEmails(false);
+        }
+      }
     } catch (err) {
       console.error(err);
     }
   };
-
-  const emailProgressTotal = emailStatus?.total ?? 0;
-  const emailProgressDone = (emailStatus?.sent ?? 0) + (emailStatus?.failed ?? 0);
-  const emailProgressPercent =
-    emailProgressTotal > 0 ? Math.min(100, Math.round((emailProgressDone / emailProgressTotal) * 100)) : 0;
-
-  useEffect(() => {
-    if (!emailStatus?.done || !emailStatus.report || emailReportDownloaded) return;
-    downloadCsv(emailStatus.report.filename, emailStatus.report.data);
-    setEmailReportDownloaded(true);
-  }, [emailReportDownloaded, emailStatus]);
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -225,34 +260,23 @@ export function PDFGenerator({
       <div className="mt-4 flex flex-col gap-2">
         <button
           type="button"
-          disabled={isGenerating}
+          disabled={isGenerating || isSendingEmails}
           onClick={handleGenerate}
           className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
         >
-          {isGenerating ? "Generating..." : "Generate Certificates"}
+          {isGenerating ? "Generating..." : isSendingEmails ? "Sending emails..." : "Generate Certificates"}
         </button>
         {isGenerating && (
           <div className="text-xs text-slate-500">Progress: {progress}%</div>
         )}
-        {sendEmail && emailJobId && emailStatus && (
+        {sendEmail && isSendingEmails && (
           <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-            <div>
-              Email progress: {emailProgressDone}/{emailProgressTotal} sent
-              {emailStatus.failed > 0 ? `, ${emailStatus.failed} failed` : ""}
-              {emailStatus.skipped > 0 ? `, ${emailStatus.skipped} skipped` : ""}
-            </div>
-            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200">
-              <div
-                className="h-full rounded-full bg-slate-900 transition-all"
-                style={{ width: `${emailProgressPercent}%` }}
-              />
-            </div>
-            {emailStatus.done && (
-              <div className="mt-2 text-xs text-emerald-600">Email delivery completed.</div>
-            )}
+            {emailStatusMessage || "Please wait until all emails are sent."}
           </div>
         )}
-        {emailStatusError && <div className="text-xs text-amber-600">{emailStatusError}</div>}
+        {!isSendingEmails && emailStatusMessage && (
+          <div className="text-xs text-amber-600">{emailStatusMessage}</div>
+        )}
         {error && <div className="text-xs text-red-600">{error}</div>}
         {downloadMessage && <div className="text-xs text-emerald-600">{downloadMessage}</div>}
       </div>
