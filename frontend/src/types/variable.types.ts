@@ -33,4 +33,6 @@ export interface TextVariable {
   lineHeight: number;
   locked: boolean;
   layer: TextLayer;
+  wrapText: boolean;
+  wrapWidth: number;
 }

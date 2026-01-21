@@ -14,6 +14,8 @@ export interface TextVariable {
   letterSpacing: number;
   lineHeight: number;
   layer?: "front" | "back";
+  wrapText?: boolean;
+  wrapWidth?: number;
 }
 
 export interface PDFGenerationOptions {

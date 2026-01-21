@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { TextVariable } from "../types/variable.types";
 
 interface VariableEditorProps {
   variable: TextVariable | null;
+  templateWidth?: number;
   onChange: (updates: Partial<TextVariable>) => void;
 }
 
@@ -24,7 +25,7 @@ const FONT_WEIGHTS = [
 /**
  * Editor panel for updating text variable styling and positioning.
  */
-export function VariableEditor({ variable, onChange }: VariableEditorProps) {
+export function VariableEditor({ variable, templateWidth, onChange }: VariableEditorProps) {
   if (!variable) {
     return (
       <section className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm">
@@ -41,6 +42,25 @@ export function VariableEditor({ variable, onChange }: VariableEditorProps) {
         : variable.fontWeight;
 
   const [draftText, setDraftText] = useState(variable.text);
+  const measuredWidth = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+    if (!context) return 0;
+    const weight =
+      variable.fontWeight === "bold" ? "700" : variable.fontWeight === "normal" ? "400" : variable.fontWeight;
+    const style = variable.fontStyle === "italic" ? "italic" : "normal";
+    context.font = `${style} ${weight} ${variable.fontSize}px ${variable.fontFamily}`;
+    return context.measureText(draftText || variable.text || "").width;
+  }, [
+    draftText,
+    variable.fontFamily,
+    variable.fontSize,
+    variable.fontStyle,
+    variable.fontWeight,
+    variable.text,
+  ]);
+  const isTooWide =
+    Boolean(templateWidth && templateWidth > 0) && !variable.wrapText && measuredWidth > (templateWidth || 0);
 
   useEffect(() => {
     setDraftText(variable.text);
@@ -190,6 +210,38 @@ export function VariableEditor({ variable, onChange }: VariableEditorProps) {
             <option value="front">Front</option>
             <option value="back">Back</option>
           </select>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-slate-500">Text Wrapping</label>
+          <div className="mt-2 flex items-center gap-2 text-xs font-medium text-slate-600">
+            <input
+              type="checkbox"
+              checked={variable.wrapText}
+              onChange={(event) =>
+                onChange({
+                  wrapText: event.target.checked,
+                  wrapWidth: event.target.checked ? variable.wrapWidth || 600 : variable.wrapWidth,
+                })
+              }
+            />
+            Wrap text
+          </div>
+          {variable.wrapText && (
+            <input
+              type="number"
+              min={100}
+              value={Math.round(variable.wrapWidth)}
+              onChange={(event) => onChange({ wrapWidth: Number(event.target.value) })}
+              className="mt-2 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+              placeholder="Wrap width (px)"
+            />
+          )}
+          {isTooWide && (
+            <p className="mt-2 text-xs text-amber-600">
+              Text is too wide for the template. Enable wrapping or reduce font size.
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-3">

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import { Canvas, FabricObject, IText, Image as FabricImage } from "fabric";
+import { Canvas, FabricObject, IText, Image as FabricImage, Textbox } from "fabric";
 import type { CertificateTemplate } from "../types/template.types";
 import type { TextVariable } from "../types/variable.types";
 
@@ -76,13 +76,15 @@ export function useCanvas({
         textAlign: normalizeAlign(textObject.textAlign),
         letterSpacing: (textObject.charSpacing || 0) / 1000,
         lineHeight: textObject.lineHeight || 0,
+        wrapWidth:
+          textObject.type === "textbox" && textObject.width ? textObject.width : undefined,
       });
     },
     [onUpdate],
   );
 
   const attachObjectListeners = useCallback(
-    (textObject: IText) => {
+    (textObject: IText | Textbox) => {
       textObject.on("modified", () => syncVariableFromObject(textObject));
       textObject.on("changed", () => syncVariableFromObject(textObject));
       textObject.on("editing:exited", () => syncVariableFromObject(textObject));
@@ -151,10 +153,20 @@ export function useCanvas({
       const textToRender = previewText ?? variable.text;
       let textObject = canvas
         .getObjects()
-        .find((object) => getObjectId(object) === variable.id) as IText | undefined;
+        .find((object) => getObjectId(object) === variable.id) as IText | Textbox | undefined;
+      const isTextbox = textObject?.type === "textbox";
+
+      if (textObject && variable.wrapText && !isTextbox) {
+        canvas.remove(textObject);
+        textObject = undefined;
+      }
+      if (textObject && !variable.wrapText && isTextbox) {
+        canvas.remove(textObject);
+        textObject = undefined;
+      }
 
       if (!textObject) {
-        textObject = new IText(textToRender, {
+        const textProps = {
           left: variable.x,
           top: variable.y,
           originX: resolveOriginX(variable.textAlign),
@@ -178,12 +190,19 @@ export function useCanvas({
           lockScalingX: variable.locked,
           lockScalingY: variable.locked,
           lockRotation: variable.locked,
-        });
+        };
+        textObject = variable.wrapText
+          ? new Textbox(textToRender, {
+              ...textProps,
+              width: variable.wrapWidth,
+              splitByGrapheme: true,
+            })
+          : new IText(textToRender, textProps);
         (textObject as FabricObject & { data?: { id?: string } }).data = { id: variable.id };
         attachObjectListeners(textObject);
         canvas.add(textObject);
       } else {
-        textObject.set({
+        const nextProps = {
           left: variable.x,
           top: variable.y,
           originX: resolveOriginX(variable.textAlign),
@@ -206,7 +225,16 @@ export function useCanvas({
           lockScalingX: variable.locked,
           lockScalingY: variable.locked,
           lockRotation: variable.locked,
-        });
+        };
+        if (textObject.type === "textbox") {
+          textObject.set({
+            ...nextProps,
+            width: variable.wrapWidth,
+            splitByGrapheme: true,
+          });
+        } else {
+          textObject.set(nextProps);
+        }
         if (textObject.text !== textToRender) {
           textObject.text = textToRender;
         }

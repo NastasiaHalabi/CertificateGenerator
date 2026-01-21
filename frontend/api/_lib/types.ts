@@ -16,6 +16,8 @@ export interface TextVariable {
   lineHeight: number;
   locked: boolean;
   layer?: "front" | "back";
+  wrapText?: boolean;
+  wrapWidth?: number;
 }
 
 export interface PDFGenerationOptions {

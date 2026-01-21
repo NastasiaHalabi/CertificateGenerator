@@ -291,6 +291,7 @@ function App() {
               />
               <VariableEditor
                 variable={selectedVariable}
+                templateWidth={template?.width}
                 onChange={(updates) => selectedVariable && updateVariable(selectedVariable.id, updates)}
               />
             </>

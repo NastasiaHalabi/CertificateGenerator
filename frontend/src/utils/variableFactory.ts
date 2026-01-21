@@ -22,5 +22,7 @@ export function createTextVariable(name: string, x: number, y: number): TextVari
     lineHeight: 1.2,
     locked: false,
     layer: "front",
+    wrapText: false,
+    wrapWidth: 600,
   };
 }

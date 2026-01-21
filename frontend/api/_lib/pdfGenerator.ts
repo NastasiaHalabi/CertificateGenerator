@@ -200,6 +200,53 @@ function getAlignedX(variable: TextVariable, textWidth: number, templateWidth: n
   return Math.min(variable.x, templateWidth);
 }
 
+function wrapTextToWidth(
+  text: string,
+  font: PDFFont,
+  fontSize: number,
+  maxWidth: number,
+  isArabic: boolean,
+): string[] {
+  if (!maxWidth || maxWidth <= 0) return [text];
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [""];
+  const measure = (value: string) => {
+    const shaped = isArabic ? shapeArabicText(value) : value;
+    return font.widthOfTextAtSize(shaped, fontSize);
+  };
+  const lines: string[] = [];
+  let current = "";
+
+  for (const word of words) {
+    const test = current ? `${current} ${word}` : word;
+    if (measure(test) <= maxWidth) {
+      current = test;
+      continue;
+    }
+    if (current) {
+      lines.push(current);
+      current = "";
+    }
+    if (measure(word) <= maxWidth) {
+      current = word;
+      continue;
+    }
+    let chunk = "";
+    for (const char of word) {
+      const nextChunk = chunk + char;
+      if (measure(nextChunk) <= maxWidth) {
+        chunk = nextChunk;
+      } else {
+        if (chunk) lines.push(chunk);
+        chunk = char;
+      }
+    }
+    current = chunk;
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
 /**
  * Generate a single PDF buffer for a row of data.
  */
@@ -244,33 +291,41 @@ export async function generatePdfBuffer(
     const lineHeight = (variable.lineHeight || 1.2) * fontSize;
     const color = hexToRgb(variable.color);
     const baselineOffset = fontSize * 0.88;
-
-    rawLines.forEach((line, index) => {
+    let lineIndex = 0;
+    rawLines.forEach((line) => {
       const isArabicLine = containsArabic(line);
-      const shapedLine = isArabicLine ? shapeArabicText(line) : line;
-      const textWidth = font.widthOfTextAtSize(shapedLine, fontSize);
-      const x = getAlignedX(variable, textWidth, templateWidth);
-      const yFromTop = variable.y + index * lineHeight;
-      const lineBaselineOffset = isArabicLine ? baselineOffset * 0.85 : baselineOffset;
-      const y = templateHeight - yFromTop - lineBaselineOffset;
-      const isBold = variable.fontWeight === "bold" || Number(variable.fontWeight) >= 700;
-      const drawText = (offsetX = 0) =>
-        page.drawText(shapedLine, {
-          x: x + offsetX,
-          y,
-          size: fontSize,
-          font,
-          color: rgb(color.r, color.g, color.b),
-          rotate: degrees(variable.rotation),
-        });
+      const wrappedLines =
+        variable.wrapText && variable.wrapWidth
+          ? wrapTextToWidth(line, font, fontSize, variable.wrapWidth, isArabicLine)
+          : [line];
 
-      drawText();
-      if (isArabicLine && isBold) {
-        drawText(0.6);
-      }
-      if (isArabicLine && Number(variable.fontWeight) >= 800) {
-        drawText(1.1);
-      }
+      wrappedLines.forEach((wrappedLine) => {
+        const shapedLine = isArabicLine ? shapeArabicText(wrappedLine) : wrappedLine;
+        const textWidth = font.widthOfTextAtSize(shapedLine, fontSize);
+        const x = getAlignedX(variable, textWidth, templateWidth);
+        const yFromTop = variable.y + lineIndex * lineHeight;
+        const lineBaselineOffset = isArabicLine ? baselineOffset * 0.85 : baselineOffset;
+        const y = templateHeight - yFromTop - lineBaselineOffset;
+        const isBold = variable.fontWeight === "bold" || Number(variable.fontWeight) >= 700;
+        const drawText = (offsetX = 0) =>
+          page.drawText(shapedLine, {
+            x: x + offsetX,
+            y,
+            size: fontSize,
+            font,
+            color: rgb(color.r, color.g, color.b),
+            rotate: degrees(variable.rotation),
+          });
+
+        drawText();
+        if (isArabicLine && isBold) {
+          drawText(0.6);
+        }
+        if (isArabicLine && Number(variable.fontWeight) >= 800) {
+          drawText(1.1);
+        }
+        lineIndex += 1;
+      });
     });
   }
 
