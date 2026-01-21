@@ -4,6 +4,10 @@ import { mergePdfBuffers } from "../_lib/pdfMerger";
 import { isEmailConfigured, sendCertificateEmail } from "../_lib/emailSender";
 import type { GenerationRequest } from "../_lib/types";
 
+export const config = {
+  runtime: "nodejs",
+};
+
 function fillTemplate(template: string, row: Record<string, string>): string {
   const normalized = new Map<string, string>();
   Object.entries(row).forEach(([key, value]) => {
@@ -190,6 +194,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error("PDF generation failed:", error);
-    return res.status(500).json({ error: "PDF generation failed." });
+    return res.status(500).json({
+      error: "PDF generation failed.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
   }
 }
