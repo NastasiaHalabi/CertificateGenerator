@@ -56,7 +56,14 @@ export function usePDFGenerator() {
         });
 
         if (!response.ok) {
-          throw new Error("PDF generation failed.");
+          let detail = "";
+          try {
+            const body = (await response.json()) as { error?: string; detail?: string };
+            detail = body.detail || body.error || "";
+          } catch {
+            detail = "";
+          }
+          throw new Error(detail || "PDF generation failed.");
         }
 
         const data = (await response.json()) as GenerateResult;
@@ -64,7 +71,7 @@ export function usePDFGenerator() {
         return data;
       } catch (err) {
         console.error(err);
-        setError("PDF generation failed. Please try again.");
+        setError(err instanceof Error ? err.message : "PDF generation failed. Please try again.");
         throw err;
       } finally {
         setIsGenerating(false);

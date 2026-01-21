@@ -1,8 +1,35 @@
-@import "@fontsource/public-sans/400.css";
-@import "@fontsource/public-sans/700.css";
-@import "@fontsource/public-sans/800.css";
 @import "tailwindcss";
 @source "./**/*.{ts,tsx}";
+
+@font-face {
+  font-family: "Public Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src:
+    url("/public-sans-latin-400-normal.woff2") format("woff2"),
+    url("/public-sans-latin-400-normal.woff") format("woff");
+}
+
+@font-face {
+  font-family: "Public Sans";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src:
+    url("/public-sans-latin-700-normal.woff2") format("woff2"),
+    url("/public-sans-latin-700-normal.woff") format("woff");
+}
+
+@font-face {
+  font-family: "Public Sans";
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src:
+    url("/public-sans-latin-800-normal.woff2") format("woff2"),
+    url("/public-sans-latin-800-normal.woff") format("woff");
+}
 
 @layer base {
   body {
