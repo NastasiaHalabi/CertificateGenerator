@@ -85,12 +85,16 @@ function App() {
 
   useEffect(() => {
     const previous = previousTemplateRef.current;
-    if (previous && template) {
+    if (!template || previous?.id === template.id) {
+      previousTemplateRef.current = template;
+      return;
+    }
+    if (previous) {
       const widthRatio = template.width / previous.width;
       const heightRatio = template.height / previous.height;
       if (widthRatio !== 1 || heightRatio !== 1) {
-        setVariables((prev: typeof variables) =>
-          prev.map((variable) => ({
+        setVariables(
+          variables.map((variable) => ({
             ...variable,
             x: variable.x * widthRatio,
             y: variable.y * heightRatio,
@@ -99,7 +103,7 @@ function App() {
       }
     }
     previousTemplateRef.current = template;
-  }, [template, setVariables]);
+  }, [template, setVariables, variables]);
 
   useEffect(() => {
     if (!excelData) {
