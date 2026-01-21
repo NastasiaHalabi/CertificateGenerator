@@ -2,7 +2,6 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { PDFDocument } from "pdf-lib";
 import { generatePdfDocument } from "../_lib/pdfGenerator.js";
 import { isEmailConfigured, sendCertificateEmail } from "../_lib/emailSender.js";
-import { createEmailJob, finalizeEmailJob, getEmailJob, updateEmailJobStatus } from "../_lib/emailJobs.js";
 import type { GenerationRequest } from "../_lib/types.js";
 
 export const config = {
@@ -28,10 +27,11 @@ function buildEmailStatusCsv(
   const headers = ["row", "email", "status", "error"];
   const lines = [headers.join(",")];
   rows.forEach((row) => {
+    const status = row.status === "queued" ? "sent" : row.status;
     const line = [
       String(row.row),
       `"${(row.email || "").replace(/"/g, '""')}"`,
-      row.status || "",
+      status || "",
       `"${(row.error || "").replace(/"/g, '""')}"`,
     ];
     lines.push(line.join(","));
@@ -89,7 +89,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       pdfBuffer: Uint8Array;
       rowData: Record<string, string>;
     }> = [];
-    let emailJobId: string | null = null;
 
     const pdfDoc = await generatePdfDocument(
       templateDataUrl,
@@ -197,18 +196,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       };
     }
 
-    if (shouldSendEmail) {
-      const reportName = options.filename
-        ? `${options.filename}_email_status.csv`
-        : "email_status.csv";
-      const job = createEmailJob(emailStatuses, emailQueue.length, reportName);
-      emailJobId = job.id;
-      response.emailJobId = emailJobId;
-    }
-
     res.status(200).json(response);
 
-    if (shouldSendEmail && emailQueue.length > 0 && emailJobId) {
+    if (shouldSendEmail && emailQueue.length > 0) {
       setImmediate(async () => {
         for (const item of emailQueue) {
           const to = item.recipients.join(", ");
@@ -228,25 +218,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               bcc: options.emailBcc,
               attachment: { filename: item.filename, content: item.pdfBuffer },
             });
-            updateEmailJobStatus(emailJobId, item.rowIndex + 1, "sent", "");
           } catch (err) {
-            updateEmailJobStatus(
-              emailJobId,
-              item.rowIndex + 1,
-              "failed",
-              err instanceof Error ? err.message : "Unknown error",
-            );
             // eslint-disable-next-line no-console
             console.error(
               `Email failed for row ${item.rowIndex + 1}:`,
               err instanceof Error ? err.message : err,
             );
           }
-        }
-        const job = getEmailJob(emailJobId);
-        if (job) {
-          const finalCsv = buildEmailStatusCsv(job.statuses);
-          finalizeEmailJob(emailJobId, Buffer.from(finalCsv, "utf8").toString("base64"));
         }
       });
     }
