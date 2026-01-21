@@ -1,7 +1,6 @@
 import { PDFDocument, PDFFont, StandardFonts, degrees, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { readFile } from "fs/promises";
-import path from "path";
 import arabicReshaper from "arabic-reshaper";
 import bidiFactory from "bidi-js";
 import type { GenerationRequest, TextVariable } from "./types.js";
@@ -39,20 +38,15 @@ const arabicFontCache: {
   regular?: Uint8Array;
 } = {};
 
-function fontsBasePath() {
-  return path.join(process.cwd(), "api", "assets", "fonts");
-}
-
 async function loadPublicSansFonts() {
   if (publicSansCache.regular && publicSansCache.bold && publicSansCache.extraBold) {
     return publicSansCache;
   }
-  const basePath = fontsBasePath();
   try {
     const [regular, bold, extraBold] = await Promise.all([
-      readFile(path.join(basePath, "PublicSans-Regular.ttf")),
-      readFile(path.join(basePath, "PublicSans-Bold.ttf")),
-      readFile(path.join(basePath, "PublicSans-ExtraBold.ttf")),
+      readFile(new URL("../assets/fonts/PublicSans-Regular.ttf", import.meta.url)),
+      readFile(new URL("../assets/fonts/PublicSans-Bold.ttf", import.meta.url)),
+      readFile(new URL("../assets/fonts/PublicSans-ExtraBold.ttf", import.meta.url)),
     ]);
     publicSansCache.regular = new Uint8Array(regular);
     publicSansCache.bold = new Uint8Array(bold);
@@ -66,9 +60,10 @@ async function loadPublicSansFonts() {
 
 async function loadArabicFont() {
   if (arabicFontCache.regular) return arabicFontCache;
-  const basePath = fontsBasePath();
   try {
-    const regular = await readFile(path.join(basePath, "NotoNaskhArabic-Regular.ttf"));
+    const regular = await readFile(
+      new URL("../assets/fonts/NotoNaskhArabic-Regular.ttf", import.meta.url),
+    );
     arabicFontCache.regular = new Uint8Array(regular);
   } catch (error) {
     // eslint-disable-next-line no-console
@@ -111,11 +106,12 @@ async function resolveFont(
     const key = "arabic-regular";
     const cached = fontCache.get(key);
     if (cached) return cached;
-    if (fonts.regular) {
-      const embedded = await pdf.embedFont(fonts.regular);
-      fontCache.set(key, embedded);
-      return embedded;
+    if (!fonts.regular) {
+      throw new Error("Arabic font is missing on the server.");
     }
+    const embedded = await pdf.embedFont(fonts.regular);
+    fontCache.set(key, embedded);
+    return embedded;
   }
 
   if (family === "public-sans") {
