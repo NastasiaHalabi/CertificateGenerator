@@ -89,7 +89,7 @@ function App() {
       const widthRatio = template.width / previous.width;
       const heightRatio = template.height / previous.height;
       if (widthRatio !== 1 || heightRatio !== 1) {
-        setVariables((prev) =>
+        setVariables((prev: typeof variables) =>
           prev.map((variable) => ({
             ...variable,
             x: variable.x * widthRatio,
