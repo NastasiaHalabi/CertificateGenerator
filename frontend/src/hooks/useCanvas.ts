@@ -169,8 +169,8 @@ export function useCanvas({
         const textProps = {
           left: variable.x,
           top: variable.y,
-          originX: resolveOriginX(variable.textAlign),
-          originY: "top",
+          originX: resolveOriginX(variable.textAlign) as "left" | "center" | "right",
+          originY: "top" as const,
           fontSize: variable.fontSize,
           fontFamily: variable.fontFamily,
           fontWeight: variable.fontWeight,
@@ -205,8 +205,8 @@ export function useCanvas({
         const nextProps = {
           left: variable.x,
           top: variable.y,
-          originX: resolveOriginX(variable.textAlign),
-          originY: "top",
+          originX: resolveOriginX(variable.textAlign) as "left" | "center" | "right",
+          originY: "top" as const,
           fontSize: variable.fontSize,
           fontFamily: variable.fontFamily,
           fontWeight: variable.fontWeight,
