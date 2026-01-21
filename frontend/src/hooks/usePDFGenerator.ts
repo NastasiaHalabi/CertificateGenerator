@@ -12,7 +12,7 @@ interface GenerateResult {
   emailReport?: { filename: string; data: string };
 }
 
-const API_BASE_URL = "http://localhost:4000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
 /**
  * Call backend PDF generation endpoint and expose loading state.
@@ -48,7 +48,8 @@ export function usePDFGenerator() {
           options,
         };
 
-        const response = await fetch(`${API_BASE_URL}/api/pdf/generate`, {
+        const apiBase = API_BASE_URL || window.location.origin;
+        const response = await fetch(`${apiBase}/api/pdf/generate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
