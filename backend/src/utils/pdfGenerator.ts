@@ -11,10 +11,15 @@ function dataUrlToBuffer(dataUrl: string): Uint8Array {
   return Uint8Array.from(Buffer.from(base64, "base64"));
 }
 
-function normalizeFontFamily(family: string): "helvetica" | "times" | "courier" | "public-sans" {
+function normalizeFontFamily(
+  family: string,
+): "helvetica" | "times" | "courier" | "public-sans" | "noto-sans-arabic" {
   const lower = family.toLowerCase();
   if (lower.includes("public sans")) {
     return "public-sans";
+  }
+  if (lower.includes("noto sans arabic")) {
+    return "noto-sans-arabic";
   }
   if (lower.includes("times")) {
     return "times";
@@ -33,6 +38,12 @@ const publicSansCache: {
 
 const arabicFontCache: {
   regular?: Uint8Array;
+} = {};
+
+const notoSansArabicCache: {
+  regular?: Uint8Array;
+  bold?: Uint8Array;
+  extraBold?: Uint8Array;
 } = {};
 
 const bidi = bidiFactory();
@@ -80,6 +91,27 @@ async function loadArabicFont() {
   return arabicFontCache;
 }
 
+async function loadNotoSansArabicFonts() {
+  if (notoSansArabicCache.regular && notoSansArabicCache.bold && notoSansArabicCache.extraBold) {
+    return notoSansArabicCache;
+  }
+  const basePath = path.join(process.cwd(), "assets", "fonts");
+  try {
+    const [regular, bold, extraBold] = await Promise.all([
+      readFile(path.join(basePath, "NotoSansArabic-Regular.ttf")),
+      readFile(path.join(basePath, "NotoSansArabic-Bold.ttf")),
+      readFile(path.join(basePath, "NotoSansArabic-ExtraBold.ttf")),
+    ]);
+    notoSansArabicCache.regular = new Uint8Array(regular);
+    notoSansArabicCache.bold = new Uint8Array(bold);
+    notoSansArabicCache.extraBold = new Uint8Array(extraBold);
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error("Failed to load Noto Sans Arabic fonts:", error);
+  }
+  return notoSansArabicCache;
+}
+
 function resolveWeightLabel(weight: string) {
   if (weight === "bold") return "bold";
   const numeric = Number(weight);
@@ -100,13 +132,28 @@ async function resolveFont(
   const isBold = variable.fontWeight === "bold" || Number(variable.fontWeight) >= 600;
   const isItalic = variable.fontStyle === "italic";
 
-  if (containsArabic(textToRender)) {
+  if (containsArabic(textToRender) && family !== "noto-sans-arabic") {
     const fonts = await loadArabicFont();
     const key = "arabic-regular";
     const cached = fontCache.get(key);
     if (cached) return cached;
     if (fonts.regular) {
       const embedded = await pdf.embedFont(fonts.regular);
+      fontCache.set(key, embedded);
+      return embedded;
+    }
+  }
+
+  if (family === "noto-sans-arabic") {
+    const fonts = await loadNotoSansArabicFonts();
+    const weight = resolveWeightLabel(variable.fontWeight);
+    const key = `noto-sans-arabic-${weight}`;
+    const cached = fontCache.get(key);
+    if (cached) return cached;
+    const fontBytes =
+      weight === "extraBold" ? fonts.extraBold : weight === "bold" ? fonts.bold : fonts.regular;
+    if (fontBytes) {
+      const embedded = await pdf.embedFont(fontBytes);
       fontCache.set(key, embedded);
       return embedded;
     }

@@ -31,6 +31,30 @@
     url("/public-sans-latin-800-normal.woff") format("woff");
 }
 
+@font-face {
+  font-family: "Noto Sans Arabic";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/NotoSansArabic-Regular.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Noto Sans Arabic";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/NotoSansArabic-Bold.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Noto Sans Arabic";
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("/NotoSansArabic-ExtraBold.ttf") format("truetype");
+}
+
 @layer base {
   body {
     @apply bg-slate-50 text-slate-900;

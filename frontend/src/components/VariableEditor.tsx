@@ -9,6 +9,7 @@ interface VariableEditorProps {
 
 const FONT_FAMILIES = [
   "Public Sans",
+  "Noto Sans Arabic",
   "Arial",
   "Times New Roman",
   "Helvetica",
